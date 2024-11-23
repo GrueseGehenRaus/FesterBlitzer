@@ -1,0 +1,19 @@
+9 of 15 commands supported:
+engine_load supported!
+engine_load outputs: 0.000000
+coolant_temperature supported!
+coolant_temperature outputs: 46
+intake_manifold_pressure supported!
+intake_manifold_pressure outputs: 100
+engine_rpm supported!
+engine_rpm outputs: 0.000000
+vehicle_speed supported!
+vehicle_speed outputs: 0
+maf_air_flow_rate supported!
+maf_air_flow_rate outputs: 3.300000
+throttle_position supported!
+throttle_position outputs: 0.000000
+obd_standards supported!
+obd_standards outputs: 6
+runtime_since_engine_start supported!
+runtime_since_engine_start outputs: 0
