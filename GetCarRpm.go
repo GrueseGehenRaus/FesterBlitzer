@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
+
 	"github.com/rzetterberg/elmobd"
 )
 
 func main() {
 	serialPath := flag.String(
 		"serial",
-		"/dev/ttyUSB0",
+		"/dev/tty.usbserial-1130",
 		"Path to the serial device to use",
 	)
 
@@ -22,12 +23,14 @@ func main() {
 		return
 	}
 
-	rpm, err := dev.RunOBDCommand(elmobd.NewEngineRPM())
+	for true {
+		rpm, err := dev.RunOBDCommand(elmobd.NewEngineRPM())
 
-	if err != nil {
-		fmt.Println("Failed to get rpm", err)
-		return
+		if err != nil {
+			fmt.Println("Failed to get rpm", err)
+		}
+
+		fmt.Printf("Engine spins at %s RPMs\n", rpm.ValueAsLit())
 	}
 
-	fmt.Printf("Engine spins at %s RPMs\n", rpm.ValueAsLit())
 }

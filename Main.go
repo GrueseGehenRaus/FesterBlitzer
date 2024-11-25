@@ -59,60 +59,95 @@ func InitDevice() *elmobd.Device {
 	return device
 }
 
-func getEngineRPM(device elmobd.Device, RPMChannel chan <- float32 ) {
-	response, err := device.RunOBDCommand(elmobd.NewEngineRPM())
-	if err != nil {
-		log.Println("Failed to get rpm", err)
+func getEngineRPM(device elmobd.Device, RPMChannel chan<- float32) {
+	for true {
+		response, err := device.RunOBDCommand(elmobd.NewEngineRPM())
+		if err != nil {
+			log.Fatal(err)
+		}
+		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
+
+		select {
+		case RPMChannel <- float32(MonthDate):
+			log.Println("Successfully wrote to channel", MonthDate)
+		default:
+			log.Println("Channel not ready")
+		}
 	}
-	// wenn mehr als 10 errors in a row, dann erstmal pause?
-	MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
-	
-	select {
-    case RPMChannel <- float32(MonthDate):
-        log.Println("sent message", MonthDate)
-    default:
-        log.Println("no")
-    }
-	return 
+}
+
+func getEngineSpeed(device elmobd.Device, SpeedChannel chan<- int32) {
+	for true {
+		response, err := device.RunOBDCommand(elmobd.NewVehicleSpeed())
+		if err != nil {
+			log.Fatal(err)
+		}
+		MonthDate, err := strconv.ParseInt(response.ValueAsLit(), 0, 32)
+
+		select {
+		case SpeedChannel <- int32(MonthDate):
+			log.Println("Successfully wrote to channel", MonthDate)
+		default:
+			log.Println("Channel not ready")
+		}
+	}
 }
 
 func main() {
+	// Setting up the window
 	rl.InitWindow(int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight()), "Fester Blitzer in 500m!")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 	rl.ToggleFullscreen()
-	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
+	rl.DrawFPS(1, 1)
 
-	// Create channel
+	// Create new OBD2 Device
+	device := InitDevice()
+
+	// Start Loop for getting RPM in a Thread
 	RPMChannel := make(chan float32)
+	go getEngineRPM(*device, RPMChannel)
 
-	
+	// Start Loop for getting Speed in a Thread
+	SpeedChannel := make(chan int32)
+	go getEngineSpeed(*device, SpeedChannel)
+
+	// Define RPM Degrees
 	RPMStart := 120
 	RPMMax := 260
 
+	// Define Circle Positions
+	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
 	circleInnerRadius := 350.0
 	circleOuterRadius := 400.5
 
-	rl.DrawFPS(1, 1)
-
-	speed := 0
-
-	device := InitDevice()
-
 	for !rl.WindowShouldClose() {
-		go getEngineRPM(*device, RPMChannel)
-		
+		// things to add:
+		// throttle position
+		// engine load
+		// coolant temp
+		// runtime_since_engine_start
+		// if gettingData == false, paint error!
+		// correct error handling von Durak klauen
+
 		rpm := float32(0)
-		
+		speed := 0
+
 		select {
-    	case lastKnownRPM := <-RPMChannel:
-    	log.Println("rpm updated",lastKnownRPM)
-    	rpm = lastKnownRPM
-        default:
-        	log.Println("no RPM update")
-    	}
-		
-		speed += 1
+		case lastKnownRPM := <-RPMChannel:
+			log.Println("rpm updated", lastKnownRPM)
+			rpm = lastKnownRPM
+		default:
+			log.Println("no RPM update")
+		}
+
+		select {
+		case lastKnownSpeed := <-SpeedChannel:
+			log.Println("speed updated", lastKnownSpeed)
+			speed = lastKnownSpeed
+		default:
+			log.Println("no Speed update")
+		}
 
 		if speed > 150 {
 			speed = 0
@@ -136,8 +171,6 @@ func main() {
 		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(RPMStart), RPMEnd, int32(0.0), RPMColor)
 
-		// 120
-		// 260
 		// Draw Actual Circle outline
 		// rl.DrawRingLines(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Black)
 

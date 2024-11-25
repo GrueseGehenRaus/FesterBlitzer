@@ -11,7 +11,7 @@ import (
 func main() {
 	serialPath := flag.String(
 		"serial",
-		"/dev/ttyUSB0",
+		"/dev/tty.usbserial-11130",
 		"Path to the serial device to use",
 	)
 
