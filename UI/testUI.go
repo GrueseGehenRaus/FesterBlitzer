@@ -16,6 +16,10 @@ func getRPMDegrees(rpm float32) float32 {
 	return float32(rpm/6000*140 + 120)
 }
 
+func getThrottleDegrees(throttle float32) float32 {
+	return float32(throttle*40 + 70)
+}
+
 func getRPMColor(rpm float32) rl.Color {
 	switch rm := int(rpm); {
 	case rm < 1500:
@@ -50,13 +54,18 @@ func main() {
 	RPMStart := 120
 	RPMMax := 260
 
+	ThrottleStart := float32(110.0)
+	ThrottleMax := float32(70.0)
+
 	circleInnerRadius := 350.0
 	circleOuterRadius := 400.5
 
 	rl.DrawFPS(1, 1)
 
 	rpm := float32(100)
-	speed := 0
+	speed := 0		
+	throttle := 1.0		
+
 
 	for !rl.WindowShouldClose() {
 
@@ -74,6 +83,15 @@ func main() {
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
 
+		throttle = throttle - 0.1
+		if throttle < 0 {
+			throttle = 1
+		}
+		
+		ThrottleMax = getThrottleDegrees(float32(throttle))
+		
+
+
 		rl.BeginDrawing()
 
 		rl.DrawFPS(10, 10)
@@ -88,6 +106,8 @@ func main() {
 		// Draw current RPM
 		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(RPMStart), RPMEnd, int32(0.0), RPMColor)
+
+		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(ThrottleStart), float32(ThrottleMax), int32(0.0), rl.Red)
 
 		// 120
 		// 260
