@@ -146,8 +146,6 @@ func main() {
 	circleInnerRadius := 350.0
 	circleOuterRadius := 400.0
 
-	// Declare Vars that are to be shown
-
 	for !rl.WindowShouldClose() {
 		// things to add:
 		// engine load
@@ -187,8 +185,6 @@ func main() {
 		DrawKMH(speed)
 		needleStart := getNeedlePos(float32(circleInnerRadius)-15, RPMEnd)
 		needleEnd := getNeedlePos(float32(circleOuterRadius)+15, RPMEnd)
-
-		log.Println(throttlePos)
 
 		// Draw 1v9 Mathing Needle
 		rl.DrawLineEx(rl.Vector2{X: needleStart.X + float32(rl.GetScreenWidth()/2), Y: needleStart.Y + float32(rl.GetScreenHeight()/2)}, rl.Vector2{needleEnd.X + float32(rl.GetScreenWidth()/2), needleEnd.Y + float32(rl.GetScreenHeight()/2)}, 5, rl.Red)
