@@ -12,6 +12,11 @@ import (
 	"github.com/rzetterberg/elmobd"
 )
 
+type Eco struct {
+	rpm float32
+	throttle float32
+}
+
 func getNeedlePos(radius float32, degree float32) rl.Vector2 {
 	return rl.Vector2{radius * float32(math.Cos(float64(degree*math.Pi/180.0))), radius * float32(math.Sin(float64(degree*math.Pi/180.0)))}
 }
@@ -59,7 +64,8 @@ func InitDevice(path string) *elmobd.Device {
 	device, err := elmobd.NewDevice(*serialPath, false)
 
 	if err != nil {
-		log.Fatalf("Check switch? && port")
+		log.Fatalf("Failed to create device: %s", err)
+		log.Fatalf("Check switch and port")
 	}
 
 	return device
@@ -106,6 +112,58 @@ func getThrottlePos(device elmobd.Device, ThrottleChannel chan<- float32) {
 	}
 }
 
+func getRuntimeSinceEngineStart(device elmobd.Device, RuntimeChannel chan<- float32) {
+	for {
+		response, err := device.RunOBDCommand(elmobd.NewRuntimeSinceStart())
+		if err != nil {
+			log.Fatal(err)
+		}
+		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
+
+		RuntimeChannel <- float32(MonthDate)
+		time.Sleep(time.Millisecond * 16)
+	}
+}
+
+func getEcoScore(EcoChannel chan Eco, RPMChannel <-chan float32, ThrottleChannel <-chan float32, RuntimeChannel <-chan float32) {
+	rpm := float32(0)
+	throttle := float32(0)
+	count := float32(0)
+	for {
+		for count < 60 {
+			// man muss schauen wie sehr sich das verschiebt. ggf 0.96 * time.Second um sicher die 60s zu erreichen
+			for range time.Tick(time.Second) { 
+				rpm += evalRPM(<-RPMChannel)
+				throttle += evalThrottle(<-ThrottleChannel)
+				count++
+	    	} 
+		}
+		currentEco := <-EcoChannel
+		runtime := <-RuntimeChannel
+		minutes := runtime//.get(minutes) mal schauen was der type ist :)
+		rpm = rpm/count * (1/minutes) + currentEco.rpm * (1-(1/minutes))
+		throttle = throttle/count * (1/minutes) + currentEco.throttle * (1-(1/minutes))
+		EcoChannel <-Eco{rpm, throttle}
+		rpm = 0
+		throttle = 0
+		count = 0
+	}
+}
+
+func evalRPM(rpm float32) float32 {
+	if rpm <= 2500 {
+        return 100.0
+    }
+    return 100 - ((rpm - 2500) / (6000 - 2500) * 100)
+}
+
+func evalThrottle(throttle float32) float32 {
+	if throttle <= 50 {
+        return 100.0
+    }
+	return 100 - ((throttle - 50) / 50 * 100)
+}
+
 func main() {
 	// Setting up the window
 	rl.InitWindow(int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight()), "Fester Blitzer in 500m!")
@@ -113,9 +171,10 @@ func main() {
 	rl.SetTargetFPS(60)
 	rl.ToggleFullscreen()
 	rl.DrawFPS(1, 1)
-
+	
 	// Init OBD2 Reader with path to usb port
-	device := InitDevice("/dev/tty.usbserial-11130")
+	// device := InitDevice("/dev/tty.usbserial-11130")
+	device := InitDevice("/dev/ttys005")
 
 	// RPM goroutine and channel
 	RPMChannel := make(chan float32, 2048)
@@ -141,6 +200,19 @@ func main() {
 	// Throttle value for UI
 	throttlePos := float32(0)
 
+	// Plan:
+	// Wir holen uns jede Sekunde die Werte von RPM, Speed und Throttle
+	// Es wird über 1 min geaveraged und aus dem average wird ein score berechnet
+	// Dann wird es mit einem Faktor mit dem currentEco verrechnet: currentEco = 1-1/runtime_since_engine_start * currentEco + 1/runtime_since_engine_start * newEco
+	// der faktor kann mit runtime_since_engine_start berechnet werden: Je länger er läuft desto weniger verrechnen wir dem neuen Wert
+	 
+	// Runtime goroutine and channel
+	RuntimeChannel := make(chan float32, 2048)
+	go getRuntimeSinceEngineStart(*device, RuntimeChannel)
+	
+	EcoChannel := make(chan Eco, 2048)
+	go getEcoScore(EcoChannel, RPMChannel, ThrottleChannel, RuntimeChannel)	
+	
 	// Define Circle Positions
 	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
 	circleInnerRadius := 350.0

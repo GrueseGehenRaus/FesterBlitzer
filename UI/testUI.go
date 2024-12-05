@@ -63,9 +63,9 @@ func main() {
 	rl.DrawFPS(1, 1)
 
 	rpm := float32(100)
-	speed := 0		
-	throttle := 1.0		
-
+	speed := 0
+	throttle := 1.0
+	ecoStart := 61
 
 	for !rl.WindowShouldClose() {
 
@@ -83,14 +83,17 @@ func main() {
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
 
+		
+		ecoStart = ecoStart - 5
+		if ecoStart <= -80 {
+			ecoStart = 61
+		}
 		throttle = throttle - 0.1
 		if throttle < 0 {
 			throttle = 1
 		}
-		
-		ThrottleMax = getThrottleDegrees(float32(throttle))
-		
 
+		ThrottleMax = getThrottleDegrees(float32(throttle))
 
 		rl.BeginDrawing()
 
@@ -109,6 +112,7 @@ func main() {
 
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(ThrottleStart), float32(ThrottleMax), int32(0.0), rl.Red)
 
+		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(60), float32(ecoStart), int32(0.0), rl.Green)
 		// 120
 		// 260
 		// Draw Actual Circle outline

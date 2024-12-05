@@ -1,4 +1,4 @@
-package blitzer
+package main
 
 import (
 	"encoding/json"
@@ -113,7 +113,7 @@ func getDirection(coord1 [2]float64, coord2 [2]float64) float64 {
 }
 
 // SPECIAL THANKS TO TIM SIEFKEN (I588350)
-func getScanBox(lastPos [2]float64, currPos [2]float64) [4]Point {
+func getScanBox(lastPos [2]float64, currPos [2]float64) [4][2]float64 {
 	L1 := 1.0
 	L2 := 0.4
 	p0 := get3DPos(lastPos)
@@ -132,25 +132,29 @@ func getScanBox(lastPos [2]float64, currPos [2]float64) [4]Point {
 	B := Point{p1.x - vNorm.x*L2, p1.y - vNorm.y*L2, p1.z - vNorm.z*L2}
 	C := Point{p2.x + vNorm.x*L2, p2.y + vNorm.y*L2, p2.z + vNorm.z*L2}
 	D := Point{p2.x - vNorm.x*L2, p2.y - vNorm.y*L2, p2.z - vNorm.z*L2}
-
-	return [4]Point{A, B, C, D}
+	
+	return [4][2]float64{get2DPos(A), get2DPos(B), get2DPos(C), get2DPos(D)}
 }
 
 // SPECIAL THANKS TO TIM SIEFKEN (I588350)
-func getBoundingBox(points [4]Point) Point {
-	returnPoint := points[0]
+func getBoundingBox(points [4][2]float64) ([2]float64, [2]float64) {
+	len_min := points[0][0]
+	len_max := points[0][0]
+	lat_min := points[0][1]
+	lat_max := points[0][1]
 	for _, point := range points {
-		if point.x < returnPoint.x {
-			returnPoint.x = point.x
+		if point[0] < len_min {
+			len_min= point[0]
+		} else if point[0] > len_max {
+			len_max = point[0]
 		}
-		if point.y < returnPoint.y {
-			returnPoint.y = point.y
-		}
-		if point.z < returnPoint.z {
-			returnPoint.z = point.z
+		if point[1] < lat_min {
+			lat_min = point[1]
+		} else if point[1] > lat_max {
+			lat_max = point[1]
 		}
 	}
-	return returnPoint
+	return [2]float64{len_min, lat_min}, [2]float64{len_max, lat_max}
 }
 
 // SPECIAL THANKS TO TIM SIEFKEN (I588350)
@@ -159,15 +163,25 @@ func get3DPos(pos [2]float64) Point {
 	return Point{math.Cos(pos[0]) * math.Cos(pos[1]) * R, math.Sin(pos[0]) * math.Cos(pos[1]) * R, math.Sin(pos[1]) * R}
 }
 
+func get2DPos(point Point) [2]float64 {
+	R := 6371.00
+	return [2]float64{math.Asin(point.z / R), math.Atan2(point.y, point.x)}
+}
+
 func main() {
 	currPos := [2]float64{49.0161, 8.3980}
 	// lastPos := [2]float64{49.0189, 8.3974}
 	lastPos := [2]float64{49.01880678328532, 8.389688331453078}
 
-	url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
-		currPos[0]-0.015, currPos[1]-0.015, currPos[0]+0.015, currPos[1]+0.015)
+	scanBox := getScanBox(lastPos, currPos)
+	print(scanBox[0][0], scanBox[0][1], scanBox[1][0], scanBox[1][1], scanBox[2][0], scanBox[2][1], scanBox[3][0], scanBox[3][1], "\n")
+	boxStart, boxEnd := getBoundingBox(scanBox)
+	
+		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
+		boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
 
 	resp, err := http.Get(url)
+	print(url, "\n")
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -178,5 +192,5 @@ func main() {
 	for _, blitzer := range Blitzers {
 		print(blitzer.City, blitzer.Street, blitzer.Vmax, blitzer.Distance, "\n")
 	}
-	print(fmt.Sprintf("Direction: %.2f°\n", getDirection(currPos, lastPos)))
+	// print(fmt.Sprintf("Direction: %.2f°\n", getDirection(currPos, lastPos)))
 }
