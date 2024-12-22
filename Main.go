@@ -2,9 +2,11 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"image/color"
 	"log"
 	"math"
+	"os"
 	"strconv"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 )
 
 type Eco struct {
-	rpm float32
+	rpm      float32
 	throttle float32
 }
 
@@ -22,10 +24,14 @@ func getNeedlePos(radius float32, degree float32) rl.Vector2 {
 }
 
 func getRPMDegrees(rpm float32) float32 {
+	if rpm > 6000 {
+		return 260
+	}
 	return float32(rpm/6000*140 + 120)
 }
 
 func getThrottleDegrees(throttle float32) float32 {
+	fmt.Print(strconv.FormatFloat(float64(throttle*40) + 71, 'f', 6, 32))
 	return float32(throttle*40 + 71)
 }
 
@@ -64,7 +70,6 @@ func InitDevice(path string) *elmobd.Device {
 	device, err := elmobd.NewDevice(*serialPath, false)
 
 	if err != nil {
-		log.Fatalf("Failed to create device: %s", err)
 		log.Fatalf("Check switch and port")
 	}
 
@@ -85,14 +90,16 @@ func getEngineRPM(device elmobd.Device, RPMChannel chan<- float32) {
 	}
 }
 
-func getCarSpeed(device elmobd.Device, SpeedChannel chan<- int) {
+func getCarSpeed(device elmobd.Device, SpeedChannel chan<- int, file *os.File) {
+	log.SetOutput(file)
+	log.Print("lehm")
 	for {
 		response, err := device.RunOBDCommand(elmobd.NewVehicleSpeed())
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
 		}
 
-		MonthDate, err := strconv.ParseInt(response.ValueAsLit(), 0, 32)
+		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
 		SpeedChannel <- int(MonthDate)
 		// 60 FPS = 16ms
 		time.Sleep(time.Millisecond * 16)
@@ -105,8 +112,14 @@ func getThrottlePos(device elmobd.Device, ThrottleChannel chan<- float32) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		MonthDate, err := strconv.ParseInt(response.ValueAsLit(), 0, 32)
+		
+		//log.Print(response.ValueAsLit())
+		//log.Print(elmobd.NewThrottlePosition().Value)
+		
+		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
 
+		// log.Print("Throttle%: ", MonthDate)
+		
 		ThrottleChannel <- float32(MonthDate)
 		time.Sleep(time.Millisecond * 16)
 	}
@@ -119,9 +132,9 @@ func getRuntimeSinceEngineStart(device elmobd.Device, RuntimeChannel chan<- floa
 			log.Fatal(err)
 		}
 		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
-
+		
 		RuntimeChannel <- float32(MonthDate)
-		time.Sleep(time.Millisecond * 16)
+		time.Sleep(time.Second * 15)
 	}
 }
 
@@ -132,18 +145,18 @@ func getEcoScore(EcoChannel chan Eco, RPMChannel <-chan float32, ThrottleChannel
 	for {
 		for count < 60 {
 			// man muss schauen wie sehr sich das verschiebt. ggf 0.96 * time.Second um sicher die 60s zu erreichen
-			for range time.Tick(time.Second) { 
+			for range time.Tick(time.Second) {
 				rpm += evalRPM(<-RPMChannel)
 				throttle += evalThrottle(<-ThrottleChannel)
 				count++
-	    	} 
+			}
 		}
 		currentEco := <-EcoChannel
 		runtime := <-RuntimeChannel
-		minutes := runtime//.get(minutes) mal schauen was der type ist :)
-		rpm = rpm/count * (1/minutes) + currentEco.rpm * (1-(1/minutes))
-		throttle = throttle/count * (1/minutes) + currentEco.throttle * (1-(1/minutes))
-		EcoChannel <-Eco{rpm, throttle}
+		minutes := float32(int32(runtime / 60))
+		rpm = rpm/count*(1/minutes) + currentEco.rpm*(1-(1/minutes))
+		throttle = throttle/count*(1/minutes) + currentEco.throttle*(1-(1/minutes))
+		EcoChannel <- Eco{rpm, throttle}
 		rpm = 0
 		throttle = 0
 		count = 0
@@ -152,29 +165,33 @@ func getEcoScore(EcoChannel chan Eco, RPMChannel <-chan float32, ThrottleChannel
 
 func evalRPM(rpm float32) float32 {
 	if rpm <= 2500 {
-        return 100.0
-    }
-    return 100 - ((rpm - 2500) / (6000 - 2500) * 100)
+		return 100.0
+	}
+	return 100 - ((rpm - 2500) / (6000 - 2500) * 100)
 }
 
 func evalThrottle(throttle float32) float32 {
 	if throttle <= 50 {
-        return 100.0
-    }
+		return 100.0
+	}
 	return 100 - ((throttle - 50) / 50 * 100)
 }
 
 func main() {
+	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal(err)
+	}
 	// Setting up the window
 	rl.InitWindow(int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight()), "Fester Blitzer in 500m!")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 	rl.ToggleFullscreen()
 	rl.DrawFPS(1, 1)
-	
+
 	// Init OBD2 Reader with path to usb port
-	// device := InitDevice("/dev/tty.usbserial-11130")
-	device := InitDevice("/dev/ttys005")
+	//device := InitDevice("/dev/tty.usbserial-11310")
+	device := InitDevice("test://")
 
 	// RPM goroutine and channel
 	RPMChannel := make(chan float32, 2048)
@@ -187,7 +204,7 @@ func main() {
 
 	// Speed goroutine and channel
 	SpeedChannel := make(chan int, 2048)
-	go getCarSpeed(*device, SpeedChannel)
+	go getCarSpeed(*device, SpeedChannel, file)
 	// Speed value for UI
 	speed := 0
 
@@ -200,19 +217,13 @@ func main() {
 	// Throttle value for UI
 	throttlePos := float32(0)
 
-	// Plan:
-	// Wir holen uns jede Sekunde die Werte von RPM, Speed und Throttle
-	// Es wird über 1 min geaveraged und aus dem average wird ein score berechnet
-	// Dann wird es mit einem Faktor mit dem currentEco verrechnet: currentEco = 1-1/runtime_since_engine_start * currentEco + 1/runtime_since_engine_start * newEco
-	// der faktor kann mit runtime_since_engine_start berechnet werden: Je länger er läuft desto weniger verrechnen wir dem neuen Wert
-	 
 	// Runtime goroutine and channel
 	RuntimeChannel := make(chan float32, 2048)
-	go getRuntimeSinceEngineStart(*device, RuntimeChannel)
-	
+	// go getRuntimeSinceEngineStart(*device, RuntimeChannel)
+
 	EcoChannel := make(chan Eco, 2048)
-	go getEcoScore(EcoChannel, RPMChannel, ThrottleChannel, RuntimeChannel)	
-	
+	go getEcoScore(EcoChannel, RPMChannel, ThrottleChannel, RuntimeChannel)
+
 	// Define Circle Positions
 	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
 	circleInnerRadius := 350.0
@@ -223,7 +234,6 @@ func main() {
 		// engine load
 		// coolant temp
 		// runtime_since_engine_start
-		// if gettingData == false, paint error!
 		// correct error handling von Durak klauen
 		// check if device.RunOBDCommand(elmobd.NewEngineOilTemperature()) is a thing (wäre cool)
 
@@ -235,29 +245,36 @@ func main() {
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
 		ThrottleMax = getThrottleDegrees(throttlePos)
-
+		
 		rl.BeginDrawing()
 		rl.DrawFPS(10, 10)
 		rl.ClearBackground(rl.Black)
+		
+		// log.Print(ThrottleMax)
+		
+		// Draw Speed
+		DrawKMH(speed)
 
 		// Draw gray circle background
-		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)		
-		
+		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)
+
 		// Draw current RPM
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(RPMStart), RPMEnd, int32(0.0), RPMColor)
 
 		// Draw current Throttle
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(ThrottleStart), float32(ThrottleMax), int32(0.0), rl.Red)
-		
+
 		// Draw Black bars above
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+4.5, float32(circleInnerRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
 		rl.DrawRing(circleCenter, float32(circleOuterRadius)-4.5, float32(circleOuterRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
 
-		// Draw Speed
-		DrawKMH(speed)
+		
 		needleStart := getNeedlePos(float32(circleInnerRadius)-15, RPMEnd)
 		needleEnd := getNeedlePos(float32(circleOuterRadius)+15, RPMEnd)
-
+		
+		// eco := <-EcoChannel
+		// rl.DrawText(strconv.Itoa(int(eco.rpm)), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)+300, 100, rl.White)
+		
 		// Draw 1v9 Mathing Needle
 		rl.DrawLineEx(rl.Vector2{X: needleStart.X + float32(rl.GetScreenWidth()/2), Y: needleStart.Y + float32(rl.GetScreenHeight()/2)}, rl.Vector2{needleEnd.X + float32(rl.GetScreenWidth()/2), needleEnd.Y + float32(rl.GetScreenHeight()/2)}, 5, rl.Red)
 
