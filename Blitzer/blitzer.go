@@ -82,7 +82,7 @@ func getBlitzer(blitzers BlitzerDEResponse, currPos [2]float64) []Blitzer {
 		if blitzer.Vmax != "" {
 			lat, _ := strconv.ParseFloat(blitzer.Lat, 64)
 			lng, _ := strconv.ParseFloat(blitzer.Lng, 64)
-			vmax, _ := strconv.ParseInt(blitzer.Vmax, 32, 0)
+			vmax, _ := strconv.ParseInt(blitzer.Vmax, 0, 32)			
 			a = append(a, Blitzer{int32(vmax), blitzer.Address.City, blitzer.Address.Street, getDist(currPos, [2]float64{lat, lng})})
 		}
 	}
@@ -124,7 +124,7 @@ func getScanBox(lastPos [2]float64, currPos [2]float64) [4][2]float64 {
 
 	p2 := Point{p1.x + p01.x*L1/lenp01, p1.y + p01.y*L1/lenp01, p1.z + p01.z*L1/lenp01}
 
-	v := Point{p1.y*p01.z - p1.z*p01.y, p1.z*p2.x - p1.z*p01.x, p1.x*p01.y - p1.y*p01.x}
+	v := Point{p1.y*p01.z - p1.z*p01.y, p1.z*p01.x - p1.x*p01.z, p1.x*p01.y - p1.y*p01.x}
 	lenV := math.Sqrt(v.x*v.x + v.y*v.y + v.z*v.z)
 	vNorm := Point{v.x / lenV, v.y / lenV, v.z / lenV}
 
@@ -132,7 +132,7 @@ func getScanBox(lastPos [2]float64, currPos [2]float64) [4][2]float64 {
 	B := Point{p1.x - vNorm.x*L2, p1.y - vNorm.y*L2, p1.z - vNorm.z*L2}
 	C := Point{p2.x + vNorm.x*L2, p2.y + vNorm.y*L2, p2.z + vNorm.z*L2}
 	D := Point{p2.x - vNorm.x*L2, p2.y - vNorm.y*L2, p2.z - vNorm.z*L2}
-	
+
 	return [4][2]float64{get2DPos(A), get2DPos(B), get2DPos(C), get2DPos(D)}
 }
 
@@ -144,7 +144,7 @@ func getBoundingBox(points [4][2]float64) ([2]float64, [2]float64) {
 	lat_max := points[0][1]
 	for _, point := range points {
 		if point[0] < len_min {
-			len_min= point[0]
+			len_min = point[0]
 		} else if point[0] > len_max {
 			len_max = point[0]
 		}
@@ -160,24 +160,31 @@ func getBoundingBox(points [4][2]float64) ([2]float64, [2]float64) {
 // SPECIAL THANKS TO TIM SIEFKEN (I588350)
 func get3DPos(pos [2]float64) Point {
 	R := 6371.00
-	return Point{math.Cos(pos[0]) * math.Cos(pos[1]) * R, math.Sin(pos[0]) * math.Cos(pos[1]) * R, math.Sin(pos[1]) * R}
+	lat := pos[0] * math.Pi / 180.0
+	lon := pos[1] * math.Pi / 180.0
+	return Point{
+		math.Cos(lat) * math.Cos(lon) * R,
+		math.Cos(lat) * math.Sin(lon) * R,
+		math.Sin(lat) * R,
+	}
 }
 
 func get2DPos(point Point) [2]float64 {
 	R := 6371.00
-	return [2]float64{math.Asin(point.z / R), math.Atan2(point.y, point.x)}
-}
+	lat := math.Asin(point.z / R) * 180.0 / math.Pi
+    lon := math.Atan2(point.y, point.x) * 180.0 / math.Pi
+    return [2]float64{lat, lon}}
 
 func main() {
-	currPos := [2]float64{49.0161, 8.3980}
-	// lastPos := [2]float64{49.0189, 8.3974}
-	lastPos := [2]float64{49.01880678328532, 8.389688331453078}
+	lastPos := [2]float64{49.0161, 8.3980}
+ 	currPos := [2]float64{49.0189, 8.3974}
+	//lastPos := [2]float64{49.01880678328532, 8.389688331453078}
 
 	scanBox := getScanBox(lastPos, currPos)
-	print(scanBox[0][0], scanBox[0][1], scanBox[1][0], scanBox[1][1], scanBox[2][0], scanBox[2][1], scanBox[3][0], scanBox[3][1], "\n")
+	// print(scanBox[0][0], scanBox[0][1], scanBox[1][0], scanBox[1][1], scanBox[2][0], scanBox[2][1], scanBox[3][0], scanBox[3][1], "\n")
 	boxStart, boxEnd := getBoundingBox(scanBox)
-	
-		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
+
+	url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
 		boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
 
 	resp, err := http.Get(url)
@@ -188,9 +195,11 @@ func main() {
 	}
 
 	response := decode(resp)
+	// still need to get distance with vectors instead of lat/long
+	// also, need to find a way to store current Blitzers and compare them to the last ones && decide which to show in ui
 	Blitzers := getBlitzer(response, currPos)
 	for _, blitzer := range Blitzers {
-		print(blitzer.City, blitzer.Street, blitzer.Vmax, blitzer.Distance, "\n")
+		println(fmt.Sprintf("%d limit in %s %s in %fm", blitzer.Vmax, blitzer.Street, blitzer.City, blitzer.Distance))
 	}
 	// print(fmt.Sprintf("Direction: %.2f°\n", getDirection(currPos, lastPos)))
 }

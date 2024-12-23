@@ -254,7 +254,7 @@ func main() {
 		
 		// Draw Speed
 		DrawKMH(speed)
-
+		
 		// Draw gray circle background
 		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)
 
