@@ -8,13 +8,6 @@ import (
 	"strconv"
 )
 
-type Blitzer struct {
-	Vmax     int32
-	City     string
-	Street   string
-	Distance float64
-}
-
 type BlitzerDEResponse struct {
 	Pois []struct {
 		ID      string `json:"id"`
@@ -59,6 +52,13 @@ type BlitzerDEResponse struct {
 	Infos []any `json:"infos"`
 }
 
+type Blitzer struct {
+	Vmax     int32
+	City     string
+	Street   string
+	Distance float64
+}
+
 type Point struct {
 	x float64
 	y float64
@@ -82,7 +82,7 @@ func getBlitzer(blitzers BlitzerDEResponse, currPos [2]float64) []Blitzer {
 		if blitzer.Vmax != "" {
 			lat, _ := strconv.ParseFloat(blitzer.Lat, 64)
 			lng, _ := strconv.ParseFloat(blitzer.Lng, 64)
-			vmax, _ := strconv.ParseInt(blitzer.Vmax, 0, 32)			
+			vmax, _ := strconv.ParseInt(blitzer.Vmax, 0, 32)
 			a = append(a, Blitzer{int32(vmax), blitzer.Address.City, blitzer.Address.Street, getDist(currPos, [2]float64{lat, lng})})
 		}
 	}
@@ -171,15 +171,31 @@ func get3DPos(pos [2]float64) Point {
 
 func get2DPos(point Point) [2]float64 {
 	R := 6371.00
-	lat := math.Asin(point.z / R) * 180.0 / math.Pi
-    lon := math.Atan2(point.y, point.x) * 180.0 / math.Pi
-    return [2]float64{lat, lon}}
+	lat := math.Asin(point.z/R) * 180.0 / math.Pi
+	lon := math.Atan2(point.y, point.x) * 180.0 / math.Pi
+	return [2]float64{lat, lon}
+}
+
+func getClosestBlitzer(blitzers []Blitzer) Blitzer {
+	lowest := blitzers[0]
+	for _, blitzer := range blitzers[1:] {
+		if blitzer.Distance < lowest.Distance {
+			lowest = blitzer
+		}
+	}
+	return lowest
+}
 
 func main() {
-	lastPos := [2]float64{49.0161, 8.3980}
- 	currPos := [2]float64{49.0189, 8.3974}
+	// Karlsruhe nach Norden
+	//lastPos := [2]float64{49.0161, 8.3980}
+	//currPos := [2]float64{49.0189, 8.3974}
 	//lastPos := [2]float64{49.01880678328532, 8.389688331453078}
 
+	// Hailfingen nach Seebron
+	lastPos := [2]float64{48.515966, 8.869765}
+	currPos := [2]float64{48.515276, 8.870355}
+	
 	scanBox := getScanBox(lastPos, currPos)
 	// print(scanBox[0][0], scanBox[0][1], scanBox[1][0], scanBox[1][1], scanBox[2][0], scanBox[2][1], scanBox[3][0], scanBox[3][1], "\n")
 	boxStart, boxEnd := getBoundingBox(scanBox)
@@ -195,11 +211,11 @@ func main() {
 	}
 
 	response := decode(resp)
-	// still need to get distance with vectors instead of lat/long
 	// also, need to find a way to store current Blitzers and compare them to the last ones && decide which to show in ui
 	Blitzers := getBlitzer(response, currPos)
-	for _, blitzer := range Blitzers {
-		println(fmt.Sprintf("%d limit in %s %s in %fm", blitzer.Vmax, blitzer.Street, blitzer.City, blitzer.Distance))
-	}
-	// print(fmt.Sprintf("Direction: %.2f°\n", getDirection(currPos, lastPos)))
+	// for _, blitzer := range Blitzers {
+	// 		println(fmt.Sprintf("%d limit in %s %s in %fkm", blitzer.Vmax, blitzer.Street, blitzer.City, blitzer.Distance))
+	// }
+	ClosestBlitzer := getClosestBlitzer(Blitzers)
+	println(fmt.Sprintf("%d limit in %s %s in %fkm", ClosestBlitzer.Vmax, ClosestBlitzer.Street, ClosestBlitzer.City, ClosestBlitzer.Distance))
 }
