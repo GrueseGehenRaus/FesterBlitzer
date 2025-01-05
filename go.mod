@@ -1,4 +1,4 @@
-module jgl/diff
+module FesterBlitzer
 
 go 1.22.8
 

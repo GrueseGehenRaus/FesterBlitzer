@@ -1,11 +1,13 @@
 package main
 
 import (
+	Blitzer "FesterBlitzer/Blitzer"
 	"flag"
 	"fmt"
 	"image/color"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -50,7 +52,7 @@ func getRPMColor(rpm float32) rl.Color {
 	return rl.Gray
 }
 
-func DrawKMH(speed int) {
+func drawKMH(speed int) {
 	if speed < 10 {
 		rl.DrawText(strconv.Itoa(speed), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)-30, 100, rl.White)
 	} else if speed < 100 {
@@ -60,7 +62,7 @@ func DrawKMH(speed int) {
 	}
 }
 
-func InitDevice(path string) *elmobd.Device {
+func initDevice(path string) *elmobd.Device {
 	serialPath := flag.String(
 		"serial",
 		path,
@@ -177,11 +179,49 @@ func evalThrottle(throttle float32) float32 {
 	return 100 - ((throttle - 50) / 50 * 100)
 }
 
+func getBlitzer(BlitzerChannel chan <- Blitzer.Blitzer) {
+	for {
+		// getPos() braucht man halt und noch lastpos speichern vor schreiben vom Blitzer in den channel
+		
+		// HEK nach Norden
+		//lastPos := [2]float64{49.0161, 8.3980}
+		//currPos := [2]float64{49.0189, 8.3974}
+	
+		// Hailfingen nach Seebron
+		lastPos := [2]float64{48.515966, 8.869765}
+		currPos := [2]float64{48.515276, 8.870355}
+		
+		scanBox := Blitzer.GetScanBox(lastPos, currPos)
+		boxStart, boxEnd := Blitzer.GetBoundingBox(scanBox)
+	
+		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
+			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
+	
+		resp, err := http.Get(url)
+		if err != nil {
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
+			time.Sleep(time.Second * 15)
+			return
+		}
+		response := Blitzer.Decode(resp)
+		Blitzers := Blitzer.GetBlitzer(response, currPos)
+		if len(Blitzers) == 0 {
+			// auch hier UI handling ? 
+			time.Sleep(time.Second * 15)
+			return
+		}
+		BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
+		time.Sleep(time.Second * 15)
+	}
+}
+
+
 func main() {
 	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
+	
 	// Setting up the window
 	rl.InitWindow(int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight()), "Fester Blitzer in 500m!")
 	defer rl.CloseWindow()
@@ -189,38 +229,39 @@ func main() {
 	rl.ToggleFullscreen()
 	rl.DrawFPS(1, 1)
 
-	// Init OBD2 Reader with path to usb port
+	// Init OBD2 Reader with path/to/usb
 	//device := InitDevice("/dev/tty.usbserial-11310")
-	device := InitDevice("test://")
+	device := initDevice("test://")
 
-	// RPM goroutine and channel
+	// RPM definitions
 	RPMChannel := make(chan float32, 2048)
 	go getEngineRPM(*device, RPMChannel)
-	// RPM Degrees
 	RPMStart := 120
 	RPMMax := 260
-	// RPM Value for UI
 	rpm := float32(0)
 
-	// Speed goroutine and channel
+	// Speed definitions
 	SpeedChannel := make(chan int, 2048)
 	go getCarSpeed(*device, SpeedChannel, file)
-	// Speed value for UI
 	speed := 0
 
-	// Throttle goroutine and channel
+	// Throttle definitions
 	ThrottleChannel := make(chan float32, 2048)
 	go getThrottlePos(*device, ThrottleChannel)
-	// Throttle Degrees
 	ThrottleStart := 110
 	ThrottleMax := float32(70.0)
-	// Throttle value for UI
 	throttlePos := float32(0)
 
-	// Runtime goroutine and channel
+	// Blitzer definitions
+	BlitzerChannel := make(chan Blitzer.Blitzer, 2048)
+	go getBlitzer(BlitzerChannel)
+	blitzer := Blitzer.Blitzer{Vmax: 0}
+	
+	// Runtime definitions
 	RuntimeChannel := make(chan float32, 2048)
 	// go getRuntimeSinceEngineStart(*device, RuntimeChannel)
 
+	// Eco definitions
 	EcoChannel := make(chan Eco, 2048)
 	go getEcoScore(EcoChannel, RPMChannel, ThrottleChannel, RuntimeChannel)
 
@@ -228,6 +269,22 @@ func main() {
 	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
 	circleInnerRadius := 350.0
 	circleOuterRadius := 400.0
+	
+	// Load all speed signs
+	limitNeg1 := rl.LoadImage("Assets/-1.png")
+	rl.ImageResize(limitNeg1, 200, 200)
+	limit30 := rl.LoadImage("Assets/30.png")
+	rl.ImageResize(limit30, 200, 200)
+	limit50 := rl.LoadImage("Assets/50.png")
+	rl.ImageResize(limit50, 200, 200)
+	limit60 := rl.LoadImage("Assets/60.png")
+	rl.ImageResize(limit60, 200, 200)
+	limit70 := rl.LoadImage("Assets/70.png")
+	rl.ImageResize(limit70, 200, 200)
+	limit80 := rl.LoadImage("Assets/80.png")
+	rl.ImageResize(limit80, 200, 200)
+	limit100 := rl.LoadImage("Assets/100.png")
+	rl.ImageResize(limit100, 200, 200)
 
 	for !rl.WindowShouldClose() {
 		// things to add:
@@ -237,10 +294,12 @@ func main() {
 		// correct error handling von Durak klauen
 		// check if device.RunOBDCommand(elmobd.NewEngineOilTemperature()) is a thing (wäre cool)
 
+		
 		// Get new value form channels
 		rpm = <-RPMChannel
 		speed = <-SpeedChannel
 		throttlePos = <-ThrottleChannel
+		blitzer = <-BlitzerChannel
 
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
@@ -250,10 +309,39 @@ func main() {
 		rl.DrawFPS(10, 10)
 		rl.ClearBackground(rl.Black)
 		
-		// log.Print(ThrottleMax)
+		switch blitzer.Vmax {
+			case -1:
+				texture := rl.LoadTextureFromImage(limitNeg1)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 0:
+				return
+			case 30:
+				texture := rl.LoadTextureFromImage(limit30)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 50:
+				texture := rl.LoadTextureFromImage(limit50)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 60:
+				texture := rl.LoadTextureFromImage(limit60)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 70:
+				texture := rl.LoadTextureFromImage(limit70)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 80:
+				texture := rl.LoadTextureFromImage(limit80)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 100:
+				texture := rl.LoadTextureFromImage(limit100)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 120:
+				// Bild braucht man noch!
+				return
+			default:
+				log.Fatal(blitzer.Vmax, " hat noch kein Image!")
+		}
 		
 		// Draw Speed
-		DrawKMH(speed)
+		drawKMH(speed)
 		
 		// Draw gray circle background
 		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)

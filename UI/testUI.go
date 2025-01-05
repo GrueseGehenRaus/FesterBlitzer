@@ -1,9 +1,12 @@
 package main
 
 import (
+	"FesterBlitzer/Blitzer"
+	"fmt"
 	"image/color"
 	"math"
 	"strconv"
+	"net/http"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
 )
@@ -34,7 +37,7 @@ func getRPMColor(rpm float32) rl.Color {
 	return rl.Gray
 }
 
-func DrawKMH(speed int) {
+func drawKMH(speed int) {
 	if speed < 10 {
 		rl.DrawText(strconv.Itoa(speed), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)-30, 100, rl.White)
 	} else if speed < 100 {
@@ -42,6 +45,39 @@ func DrawKMH(speed int) {
 	} else if speed < 220 {
 		rl.DrawText(strconv.Itoa(speed), int32(rl.GetScreenWidth()/2)-80, int32(rl.GetScreenHeight()/2)-30, 100, rl.White)
 	}
+}
+func getBlitzer() {
+	// Karlsruhe nach Norden
+	//lastPos := [2]float64{49.0161, 8.3980}
+	//currPos := [2]float64{49.0189, 8.3974}
+	//lastPos := [2]float64{49.01880678328532, 8.389688331453078}
+
+	// Hailfingen nach Seebron
+	lastPos := [2]float64{48.515966, 8.869765}
+	currPos := [2]float64{48.515276, 8.870355}
+	
+	scanBox := blitzer.GetScanBox(lastPos, currPos)
+	// print(scanBox[0][0], scanBox[0][1], scanBox[1][0], scanBox[1][1], scanBox[2][0], scanBox[2][1], scanBox[3][0], scanBox[3][1], "\n")
+	boxStart, boxEnd := blitzer.GetBoundingBox(scanBox)
+
+	url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
+		boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
+
+	resp, err := http.Get(url)
+	print(url, "\n")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	response := blitzer.Decode(resp)
+	Blitzers := blitzer.GetBlitzer(response, currPos)
+	if len(Blitzers) == 0 {
+		println("No Blitzers found")
+		return
+	}
+	ClosestBlitzer := blitzer.GetClosestBlitzer(Blitzers)
+	println(fmt.Sprintf("%d limit in %s %s in %fkm", ClosestBlitzer.Vmax, ClosestBlitzer.Street, ClosestBlitzer.City, ClosestBlitzer.Distance))
 }
 
 func main() {
@@ -66,9 +102,19 @@ func main() {
 	speed := 0
 	throttle := 1.0
 	ecoStart := 61
-
+	
+	blitzer := blitzer.Blitzer{Vmax: 80, City: "Lehm", Street: "xdStraße", Distance: 69.0}
+	
 	for !rl.WindowShouldClose() {
 
+		if blitzer.Vmax != 0 {
+			image := rl.LoadImage(fmt.Sprintf("Assets/%d.png", blitzer.Vmax))
+			rl.ImageResize(image, 200, 200)
+			texture := rl.LoadTextureFromImage(image)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			getBlitzer()
+		}
+		
 		// time.Sleep(1000 * time.Millisecond)
 		rpm += 100
 		speed += 1
@@ -83,7 +129,6 @@ func main() {
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
 
-		
 		ecoStart = ecoStart - 5
 		if ecoStart <= -80 {
 			ecoStart = 61
@@ -123,7 +168,7 @@ func main() {
 		rl.DrawRing(circleCenter, float32(circleOuterRadius)-4.5, float32(circleOuterRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
 
 		// Draw KM/H
-		DrawKMH(speed)
+		drawKMH(speed)
 		needleStart := getNeedlePos(float32(circleInnerRadius)-15, RPMEnd)
 		needleEnd := getNeedlePos(float32(circleOuterRadius)+15, RPMEnd)
 

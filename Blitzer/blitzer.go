@@ -1,8 +1,7 @@
-package main
+package blitzer
 
 import (
 	"encoding/json"
-	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -65,7 +64,8 @@ type Point struct {
 	z float64
 }
 
-func decode(resp *http.Response) BlitzerDEResponse {
+// Decodes http response
+func Decode(resp *http.Response) BlitzerDEResponse {
 	decoder := json.NewDecoder(resp.Body)
 	var t BlitzerDEResponse
 	err := decoder.Decode(&t)
@@ -76,20 +76,22 @@ func decode(resp *http.Response) BlitzerDEResponse {
 	return t
 }
 
-func getBlitzer(blitzers BlitzerDEResponse, currPos [2]float64) []Blitzer {
+// Returns array of blitzers from response
+func GetBlitzer(blitzers BlitzerDEResponse, currPos [2]float64) []Blitzer {
 	a := []Blitzer{}
 	for _, blitzer := range blitzers.Pois {
 		if blitzer.Vmax != "" {
 			lat, _ := strconv.ParseFloat(blitzer.Lat, 64)
 			lng, _ := strconv.ParseFloat(blitzer.Lng, 64)
 			vmax, _ := strconv.ParseInt(blitzer.Vmax, 0, 32)
-			a = append(a, Blitzer{int32(vmax), blitzer.Address.City, blitzer.Address.Street, getDist(currPos, [2]float64{lat, lng})})
+			a = append(a, Blitzer{int32(vmax), blitzer.Address.City, blitzer.Address.Street, GetDist(currPos, [2]float64{lat, lng})})
 		}
 	}
 	return a
 }
 
-func getDist(start [2]float64, end [2]float64) float64 {
+// Returns distance between two points
+func GetDist(start [2]float64, end [2]float64) float64 {
 	R := 6371.0
 	dlat := end[0] - start[0]
 	dlon := end[1] - start[1]
@@ -99,25 +101,13 @@ func getDist(start [2]float64, end [2]float64) float64 {
 	return distance / 100
 }
 
-func getDirection(coord1 [2]float64, coord2 [2]float64) float64 {
-	lat1 := coord1[0] * math.Pi / 180
-	lat2 := coord2[0] * math.Pi / 180
-	dLon := (coord2[1] - coord1[1]) * math.Pi / 180
-	y := math.Sin(dLon) * math.Cos(lat2)
-	x := math.Cos(lat1)*math.Sin(lat2) - math.Sin(lat1)*math.Cos(lat2)*math.Cos(dLon)
-	brng := math.Atan2(y, x) * 180 / math.Pi
-	if brng < 0 {
-		brng += 360
-	}
-	return brng
-}
-
+// Returns scan box from 4 points
 // SPECIAL THANKS TO TIM SIEFKEN (I588350)
-func getScanBox(lastPos [2]float64, currPos [2]float64) [4][2]float64 {
+func GetScanBox(lastPos [2]float64, currPos [2]float64) [4][2]float64 {
 	L1 := 1.0
 	L2 := 0.4
-	p0 := get3DPos(lastPos)
-	p1 := get3DPos(currPos)
+	p0 := Get3DPos(lastPos)
+	p1 := Get3DPos(currPos)
 
 	p01 := Point{p1.x - p0.x, p1.y - p0.y, p1.z - p0.z}
 	lenp01 := math.Sqrt(math.Pow(p01.x, 2) + math.Pow(p01.y, 2) + math.Pow(p01.z, 2))
@@ -133,11 +123,12 @@ func getScanBox(lastPos [2]float64, currPos [2]float64) [4][2]float64 {
 	C := Point{p2.x + vNorm.x*L2, p2.y + vNorm.y*L2, p2.z + vNorm.z*L2}
 	D := Point{p2.x - vNorm.x*L2, p2.y - vNorm.y*L2, p2.z - vNorm.z*L2}
 
-	return [4][2]float64{get2DPos(A), get2DPos(B), get2DPos(C), get2DPos(D)}
+	return [4][2]float64{Get2DPos(A), Get2DPos(B), Get2DPos(C), Get2DPos(D)}
 }
 
+// Returns bounding box from 4 points
 // SPECIAL THANKS TO TIM SIEFKEN (I588350)
-func getBoundingBox(points [4][2]float64) ([2]float64, [2]float64) {
+func GetBoundingBox(points [4][2]float64) ([2]float64, [2]float64) {
 	len_min := points[0][0]
 	len_max := points[0][0]
 	lat_min := points[0][1]
@@ -157,8 +148,8 @@ func getBoundingBox(points [4][2]float64) ([2]float64, [2]float64) {
 	return [2]float64{len_min, lat_min}, [2]float64{len_max, lat_max}
 }
 
-// SPECIAL THANKS TO TIM SIEFKEN (I588350)
-func get3DPos(pos [2]float64) Point {
+// gets 3D position from 2D position
+func Get3DPos(pos [2]float64) Point {
 	R := 6371.00
 	lat := pos[0] * math.Pi / 180.0
 	lon := pos[1] * math.Pi / 180.0
@@ -169,14 +160,17 @@ func get3DPos(pos [2]float64) Point {
 	}
 }
 
-func get2DPos(point Point) [2]float64 {
+// gets 2D position from 3D position
+func Get2DPos(point Point) [2]float64 {
 	R := 6371.00
 	lat := math.Asin(point.z/R) * 180.0 / math.Pi
 	lon := math.Atan2(point.y, point.x) * 180.0 / math.Pi
 	return [2]float64{lat, lon}
 }
 
-func getClosestBlitzer(blitzers []Blitzer) Blitzer {
+// Returns closest blitzer from an array of blitzers
+func GetClosestBlitzer(blitzers []Blitzer) Blitzer {
+	// MAN KANN NOCH INFO CASEN UND DANN FESTE, BEIDSEITIG RAUSFILTERN
 	lowest := blitzers[0]
 	for _, blitzer := range blitzers[1:] {
 		if blitzer.Distance < lowest.Distance {
@@ -184,38 +178,4 @@ func getClosestBlitzer(blitzers []Blitzer) Blitzer {
 		}
 	}
 	return lowest
-}
-
-func main() {
-	// Karlsruhe nach Norden
-	//lastPos := [2]float64{49.0161, 8.3980}
-	//currPos := [2]float64{49.0189, 8.3974}
-	//lastPos := [2]float64{49.01880678328532, 8.389688331453078}
-
-	// Hailfingen nach Seebron
-	lastPos := [2]float64{48.515966, 8.869765}
-	currPos := [2]float64{48.515276, 8.870355}
-	
-	scanBox := getScanBox(lastPos, currPos)
-	// print(scanBox[0][0], scanBox[0][1], scanBox[1][0], scanBox[1][1], scanBox[2][0], scanBox[2][1], scanBox[3][0], scanBox[3][1], "\n")
-	boxStart, boxEnd := getBoundingBox(scanBox)
-
-	url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
-		boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
-
-	resp, err := http.Get(url)
-	print(url, "\n")
-	if err != nil {
-		fmt.Println("Error:", err)
-		return
-	}
-
-	response := decode(resp)
-	// also, need to find a way to store current Blitzers and compare them to the last ones && decide which to show in ui
-	Blitzers := getBlitzer(response, currPos)
-	// for _, blitzer := range Blitzers {
-	// 		println(fmt.Sprintf("%d limit in %s %s in %fkm", blitzer.Vmax, blitzer.Street, blitzer.City, blitzer.Distance))
-	// }
-	ClosestBlitzer := getClosestBlitzer(Blitzers)
-	println(fmt.Sprintf("%d limit in %s %s in %fkm", ClosestBlitzer.Vmax, ClosestBlitzer.Street, ClosestBlitzer.City, ClosestBlitzer.Distance))
 }
