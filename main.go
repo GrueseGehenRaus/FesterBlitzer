@@ -136,7 +136,7 @@ func getRuntimeSinceEngineStart(device elmobd.Device, RuntimeChannel chan<- floa
 		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
 		
 		RuntimeChannel <- float32(MonthDate)
-		time.Sleep(time.Second * 15)
+		time.Sleep(time.Millisecond * 16)
 	}
 }
 
@@ -200,18 +200,18 @@ func getBlitzer(BlitzerChannel chan <- Blitzer.Blitzer) {
 		resp, err := http.Get(url)
 		if err != nil {
 			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
-			time.Sleep(time.Second * 15)
+			time.Sleep(time.Second)
 			return
 		}
 		response := Blitzer.Decode(resp)
 		Blitzers := Blitzer.GetBlitzer(response, currPos)
 		if len(Blitzers) == 0 {
-			// auch hier UI handling ? 
-			time.Sleep(time.Second * 15)
+			// auch hier UI handling wenn es keine Blitzer hat? Maybe Autobahn keine Begrenzung Schild xd
+			time.Sleep(time.Second)
 			return
 		}
 		BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
-		time.Sleep(time.Second * 15)
+		time.Sleep(time.Second)
 	}
 }
 
@@ -230,7 +230,7 @@ func main() {
 	rl.DrawFPS(1, 1)
 
 	// Init OBD2 Reader with path/to/usb
-	//device := InitDevice("/dev/tty.usbserial-11310")
+	//device := initDevice("/dev/tty.usbserial-11310")
 	device := initDevice("test://")
 
 	// RPM definitions
@@ -363,7 +363,7 @@ func main() {
 		// eco := <-EcoChannel
 		// rl.DrawText(strconv.Itoa(int(eco.rpm)), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)+300, 100, rl.White)
 		
-		// Draw 1v9 Mathing Needle
+		// Draw Needle
 		rl.DrawLineEx(rl.Vector2{X: needleStart.X + float32(rl.GetScreenWidth()/2), Y: needleStart.Y + float32(rl.GetScreenHeight()/2)}, rl.Vector2{needleEnd.X + float32(rl.GetScreenWidth()/2), needleEnd.Y + float32(rl.GetScreenHeight()/2)}, 5, rl.Red)
 
 		rl.EndDrawing()
