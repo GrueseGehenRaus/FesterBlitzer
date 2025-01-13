@@ -182,6 +182,7 @@ func evalThrottle(throttle float32) float32 {
 func getBlitzer(BlitzerChannel chan <- Blitzer.Blitzer) {
 	for {
 		// getPos() braucht man halt und noch lastpos speichern vor schreiben vom Blitzer in den channel
+		// Blitzer types noch casen (6 ist z.B. Abstandsmessung)
 		
 		// HEK nach Norden
 		//lastPos := [2]float64{49.0161, 8.3980}
@@ -196,6 +197,7 @@ func getBlitzer(BlitzerChannel chan <- Blitzer.Blitzer) {
 	
 		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
 			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
+		print(url)
 	
 		resp, err := http.Get(url)
 		if err != nil {
@@ -271,6 +273,8 @@ func main() {
 	circleOuterRadius := 400.0
 	
 	// Load all speed signs
+	// Consider: Only load sign and write numbers urself
+	// Also load texture outside of for loop!
 	limitNeg1 := rl.LoadImage("Assets/-1.png")
 	rl.ImageResize(limitNeg1, 200, 200)
 	limit30 := rl.LoadImage("Assets/30.png")
@@ -296,10 +300,22 @@ func main() {
 
 		
 		// Get new value form channels
-		rpm = <-RPMChannel
-		speed = <-SpeedChannel
-		throttlePos = <-ThrottleChannel
-		blitzer = <-BlitzerChannel
+		select {
+			case rpm = <-RPMChannel:
+			default:
+		}
+		select {
+			case speed = <-SpeedChannel:
+			default:
+		}
+		select {
+			case throttlePos = <-ThrottleChannel:
+			default:
+		}
+		select {
+			case blitzer = <-BlitzerChannel:
+			default:
+		}
 
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
@@ -314,7 +330,7 @@ func main() {
 				texture := rl.LoadTextureFromImage(limitNeg1)
 				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
 			case 0:
-				return
+				// do nothing
 			case 30:
 				texture := rl.LoadTextureFromImage(limit30)
 				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
@@ -328,6 +344,10 @@ func main() {
 				texture := rl.LoadTextureFromImage(limit70)
 				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
 			case 80:
+				texture := rl.LoadTextureFromImage(limit80)
+				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+			case 90:
+				// braucht noch Bild
 				texture := rl.LoadTextureFromImage(limit80)
 				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
 			case 100:

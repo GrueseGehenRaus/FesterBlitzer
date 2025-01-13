@@ -28,7 +28,7 @@ type BlitzerDEResponse struct {
 		CreateDate  string `json:"create_date"`
 		ConfirmDate string `json:"confirm_date"`
 		Info        struct {
-			QltyCountryRoad int    `json:"qltyCountryRoad"`
+			QltyCountryRoad string    `json:"qltyCountryRoad"`
 			Confirmed       int    `json:"confirmed"`
 			Gesperrt        int    `json:"gesperrt"`
 			Quality         int    `json:"quality"`
