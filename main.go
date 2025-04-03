@@ -22,7 +22,7 @@ type Eco struct {
 }
 
 func getNeedlePos(radius float32, degree float32) rl.Vector2 {
-	return rl.Vector2{radius * float32(math.Cos(float64(degree*math.Pi/180.0))), radius * float32(math.Sin(float64(degree*math.Pi/180.0)))}
+	return rl.Vector2{X: radius * float32(math.Cos(float64(degree*math.Pi/180.0))), Y: radius * float32(math.Sin(float64(degree*math.Pi/180.0)))}
 }
 
 func getRPMDegrees(rpm float32) float32 {
@@ -33,7 +33,7 @@ func getRPMDegrees(rpm float32) float32 {
 }
 
 func getThrottleDegrees(throttle float32) float32 {
-	fmt.Print(strconv.FormatFloat(float64(throttle*40) + 71, 'f', 6, 32))
+	fmt.Print(strconv.FormatFloat(float64(throttle*40)+71, 'f', 6, 32))
 	return float32(throttle*40 + 71)
 }
 
@@ -62,7 +62,7 @@ func drawKMH(speed int) {
 	}
 }
 
-func initDevice(path string) *elmobd.Device {
+func _initDevice(path string) *elmobd.Device {
 	serialPath := flag.String(
 		"serial",
 		path,
@@ -114,14 +114,14 @@ func getThrottlePos(device elmobd.Device, ThrottleChannel chan<- float32) {
 		if err != nil {
 			log.Fatal(err)
 		}
-		
+
 		//log.Print(response.ValueAsLit())
 		//log.Print(elmobd.NewThrottlePosition().Value)
-		
+
 		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
 
 		// log.Print("Throttle%: ", MonthDate)
-		
+
 		ThrottleChannel <- float32(MonthDate)
 		time.Sleep(time.Millisecond * 16)
 	}
@@ -134,7 +134,7 @@ func getRuntimeSinceEngineStart(device elmobd.Device, RuntimeChannel chan<- floa
 			log.Fatal(err)
 		}
 		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
-		
+
 		RuntimeChannel <- float32(MonthDate)
 		time.Sleep(time.Millisecond * 16)
 	}
@@ -179,26 +179,26 @@ func evalThrottle(throttle float32) float32 {
 	return 100 - ((throttle - 50) / 50 * 100)
 }
 
-func getBlitzer(BlitzerChannel chan <- Blitzer.Blitzer) {
+func _getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
 	for {
 		// getPos() braucht man halt und noch lastpos speichern vor schreiben vom Blitzer in den channel
 		// Blitzer types noch casen (6 ist z.B. Abstandsmessung)
-		
+
 		// HEK nach Norden
 		//lastPos := [2]float64{49.0161, 8.3980}
 		//currPos := [2]float64{49.0189, 8.3974}
-	
+
 		// Hailfingen nach Seebron
 		lastPos := [2]float64{48.515966, 8.869765}
 		currPos := [2]float64{48.515276, 8.870355}
-		
+
 		scanBox := Blitzer.GetScanBox(lastPos, currPos)
 		boxStart, boxEnd := Blitzer.GetBoundingBox(scanBox)
-	
+
 		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
 			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
 		print(url)
-	
+
 		resp, err := http.Get(url)
 		if err != nil {
 			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
@@ -217,13 +217,12 @@ func getBlitzer(BlitzerChannel chan <- Blitzer.Blitzer) {
 	}
 }
 
-
 func main() {
 	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
 	if err != nil {
 		log.Fatal(err)
 	}
-	
+
 	// Setting up the window
 	rl.InitWindow(int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight()), "Fester Blitzer in 500m!")
 	defer rl.CloseWindow()
@@ -258,7 +257,7 @@ func main() {
 	BlitzerChannel := make(chan Blitzer.Blitzer, 2048)
 	go getBlitzer(BlitzerChannel)
 	blitzer := Blitzer.Blitzer{Vmax: 0}
-	
+
 	// Runtime definitions
 	RuntimeChannel := make(chan float32, 2048)
 	// go getRuntimeSinceEngineStart(*device, RuntimeChannel)
@@ -271,7 +270,7 @@ func main() {
 	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
 	circleInnerRadius := 350.0
 	circleOuterRadius := 400.0
-	
+
 	// Load all speed signs
 	// Consider: Only load sign and write numbers urself
 	// Also load texture outside of for loop!
@@ -298,71 +297,70 @@ func main() {
 		// correct error handling von Durak klauen
 		// check if device.RunOBDCommand(elmobd.NewEngineOilTemperature()) is a thing (wäre cool)
 
-		
 		// Get new value form channels
 		select {
-			case rpm = <-RPMChannel:
-			default:
+		case rpm = <-RPMChannel:
+		default:
 		}
 		select {
-			case speed = <-SpeedChannel:
-			default:
+		case speed = <-SpeedChannel:
+		default:
 		}
 		select {
-			case throttlePos = <-ThrottleChannel:
-			default:
+		case throttlePos = <-ThrottleChannel:
+		default:
 		}
 		select {
-			case blitzer = <-BlitzerChannel:
-			default:
+		case blitzer = <-BlitzerChannel:
+		default:
 		}
 
 		RPMEnd := getRPMDegrees(rpm)
 		RPMColor := getRPMColor(rpm)
 		ThrottleMax = getThrottleDegrees(throttlePos)
-		
+
 		rl.BeginDrawing()
 		rl.DrawFPS(10, 10)
 		rl.ClearBackground(rl.Black)
-		
+
 		switch blitzer.Vmax {
-			case -1:
-				texture := rl.LoadTextureFromImage(limitNeg1)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 0:
-				// do nothing
-			case 30:
-				texture := rl.LoadTextureFromImage(limit30)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 50:
-				texture := rl.LoadTextureFromImage(limit50)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 60:
-				texture := rl.LoadTextureFromImage(limit60)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 70:
-				texture := rl.LoadTextureFromImage(limit70)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 80:
-				texture := rl.LoadTextureFromImage(limit80)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 90:
-				// braucht noch Bild
-				texture := rl.LoadTextureFromImage(limit80)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 100:
-				texture := rl.LoadTextureFromImage(limit100)
-				rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-			case 120:
-				// Bild braucht man noch!
-				return
-			default:
-				log.Fatal(blitzer.Vmax, " hat noch kein Image!")
+		case -1:
+			texture := rl.LoadTextureFromImage(limitNeg1)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 0:
+			// do nothing
+		case 30:
+			texture := rl.LoadTextureFromImage(limit30)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 50:
+			texture := rl.LoadTextureFromImage(limit50)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 60:
+			texture := rl.LoadTextureFromImage(limit60)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 70:
+			texture := rl.LoadTextureFromImage(limit70)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 80:
+			texture := rl.LoadTextureFromImage(limit80)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 90:
+			// braucht noch Bild
+			texture := rl.LoadTextureFromImage(limit80)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 100:
+			texture := rl.LoadTextureFromImage(limit100)
+			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
+		case 120:
+			// Bild braucht man noch!
+			return
+		default:
+			log.Fatal(blitzer.Vmax, " hat noch kein Image!")
 		}
-		
+
 		// Draw Speed
 		drawKMH(speed)
-		
+
 		// Draw gray circle background
 		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)
 
@@ -376,13 +374,12 @@ func main() {
 		rl.DrawRing(circleCenter, float32(circleInnerRadius)+4.5, float32(circleInnerRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
 		rl.DrawRing(circleCenter, float32(circleOuterRadius)-4.5, float32(circleOuterRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
 
-		
 		needleStart := getNeedlePos(float32(circleInnerRadius)-15, RPMEnd)
 		needleEnd := getNeedlePos(float32(circleOuterRadius)+15, RPMEnd)
-		
+
 		// eco := <-EcoChannel
 		// rl.DrawText(strconv.Itoa(int(eco.rpm)), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)+300, 100, rl.White)
-		
+
 		// Draw Needle
 		rl.DrawLineEx(rl.Vector2{X: needleStart.X + float32(rl.GetScreenWidth()/2), Y: needleStart.Y + float32(rl.GetScreenHeight()/2)}, rl.Vector2{needleEnd.X + float32(rl.GetScreenWidth()/2), needleEnd.Y + float32(rl.GetScreenHeight()/2)}, 5, rl.Red)
 

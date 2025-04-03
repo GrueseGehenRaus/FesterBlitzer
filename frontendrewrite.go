@@ -1,11 +1,24 @@
 package main
 
 import (
+	Blitzer "FesterBlitzer/Blitzer"
+	"flag"
+	"fmt"
+	"log"
 	"math"
+	"math/rand"
+	"net/http"
 	"strconv"
+	"time"
 
 	rl "github.com/gen2brain/raylib-go/raylib"
+	"github.com/rzetterberg/elmobd"
 )
+
+type Car struct {
+	rpm   int32
+	speed int32
+}
 
 func drawTriangle(centerX float32, centerY float32, width float32, height float32, color rl.Color) {
 	top := rl.Vector2{X: centerX, Y: centerY - height/2}
@@ -38,23 +51,20 @@ func drawTrapezoid(centerX, centerY, topWidth, bottomWidth, height float32, colo
 	rl.DrawTriangle(rightTriTop, rightTriBottom, rightTriOutside, color)
 }
 
-func drawRPM(RPM int32) {
-	screenWidth := rl.GetScreenWidth()
-	screenHeight := rl.GetScreenHeight()
+func drawrpm(rpm int32) {
+	rpm = int32(rand.Intn(6001))
+	// time.Sleep(time.Millisecond * 500)
+	const meterWidth = float32(80)
+	const meterHeight = float32(300)
+	meterX := float32(rl.GetScreenWidth()/2) - 240
+	meterY := float32(rl.GetScreenHeight()/2) - 150
 
-	// Base dimensions of the meter
-	meterWidth := float32(80)
-	meterHeight := float32(300)
-	meterX := float32(screenWidth/2) - 240
-	meterY := float32(screenHeight/2) - 150
-
-	// Draw the meter background with rounded bottom corners
 	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{X: meterX, Y: meterY, Width: meterWidth, Height: meterHeight},
 		0.5, 0, 2.0, rl.Fade(rl.Blue, 0.4))
 
-	if RPM > 0 {
+	if rpm > 0 {
 		// Compute percentage fill
-		percent := float32(RPM) / 6000
+		percent := float32(rpm) / 6000
 		fillHeight := meterHeight * percent
 		if fillHeight > meterHeight {
 			fillHeight = meterHeight
@@ -82,17 +92,17 @@ func drawRPM(RPM int32) {
 }
 
 func drawSpeed(speed int32) {
-	rl.DrawText("69", int32(rl.GetScreenWidth()/2)-50, int32(rl.GetScreenHeight()/2)-50, 100, rl.White)
+	rl.DrawText(strconv.FormatInt(int64(speed), 10), int32(rl.GetScreenWidth()/2)-50, int32(rl.GetScreenHeight()/2)-50, 100, rl.White)
 	rl.DrawText("km/h", int32(rl.GetScreenWidth()/2)-50, int32(rl.GetScreenHeight()/2)+50, 50, rl.White)
 }
 
-func drawBlitzer(distance float64) {
+func drawBlitzer(distance float64, vmax int32, texture rl.Texture2D) {
 	centerY := 400.0
 	topWidth := 175.0
 	bottomWidth := 200.0
 	height := 40.0
 
-	fillCount := ((1 - distance/1000) * 5)
+	fillCount := ((1 - distance) * 5)
 
 	for i := float64(0); i < 5; i++ {
 		if i < math.Round(fillCount) {
@@ -105,7 +115,79 @@ func drawBlitzer(distance float64) {
 		bottomWidth = bottomWidth * 0.85
 		height = height * 0.85
 	}
-	rl.DrawText(strconv.FormatFloat(distance, 'f', 0, 64), 584, 175, 20, rl.White)
+
+	rl.DrawText(strconv.FormatFloat(distance*1000, 'f', 0, 64), 584, 173, 20, rl.White)
+	rl.DrawTexture(texture, 551, 65, rl.White)
+	rl.DrawText(strconv.FormatInt(int64(vmax), 10), 581, 98, 40, rl.Black)
+}
+
+func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
+	for {
+		// getPos() braucht man halt und noch LastPos speichern vor schreiben vom Blitzer in den channel
+		// Blitzer types noch casen (6 ist z.B. Abstandsmessung)
+
+		// HEK nach Norden
+		// lastPos := [2]float64{49.0161, 8.3980}
+		// currPos := [2]float64{49.0189, 8.3974}
+
+		// Hailfingen nach Seebron
+		lastPos := [2]float64{48.515966, 8.869765}
+		currPos := [2]float64{48.515276, 8.870355}
+
+		scanBox := Blitzer.GetScanBox(lastPos, currPos)
+		boxStart, boxEnd := Blitzer.GetBoundingBox(scanBox)
+
+		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
+			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
+
+		resp, err := http.Get(url)
+		if err != nil {
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
+			time.Sleep(time.Second)
+			return
+		}
+		response := Blitzer.Decode(resp)
+		Blitzers := Blitzer.GetBlitzer(response, currPos)
+		if len(Blitzers) == 0 {
+			print("No Blitzer found")
+			// auch hier UI handling wenn es keine Blitzer hat? Maybe Autobahn keine Begrenzung Schild xd
+			time.Sleep(time.Second)
+			return
+		}
+		BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
+		time.Sleep(time.Second)
+	}
+}
+
+func initDevice(path string) *elmobd.Device {
+	serialPath := flag.String(
+		"serial",
+		path,
+		"Path to the serial device to use",
+	)
+	flag.Parse()
+	device, err := elmobd.NewDevice(*serialPath, false)
+
+	if err != nil {
+		print("Check switch and port")
+	}
+
+	return device
+}
+
+func getCarStats(CarChannel chan<- Car, device *elmobd.Device) {
+	for {
+		response, err := device.RunManyOBDCommands([]elmobd.OBDCommand{elmobd.NewEngineRPM(), elmobd.NewVehicleSpeed()})
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		rpm, err := strconv.ParseInt(response[0].ValueAsLit(), 10, 32)
+		speed, err := strconv.ParseInt(response[1].ValueAsLit(), 10, 32)
+
+		CarChannel <- Car{rpm: int32(rpm), speed: int32(speed)}
+		time.Sleep(time.Millisecond * 16)
+	}
 }
 
 func main() {
@@ -115,14 +197,40 @@ func main() {
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 
+	// Init OBD2 Reader with path/to/usb
+	//device := initDevice("/dev/tty.usbserial-11310")
+	device := initDevice("test://")
+
+	CarStatsChannel := make(chan Car, 2048)
+	go getCarStats(CarStatsChannel, device)
+	carStats := Car{}
+
+	BlitzerChannel := make(chan Blitzer.Blitzer, 2048)
+	go getBlitzer(BlitzerChannel)
+	closestBlitzer := Blitzer.Blitzer{}
+
+	limitOutline := rl.LoadImage("Assets/SpeedSign.png")
+	rl.ImageResize(limitOutline, 100, 100)
+	texture := rl.LoadTextureFromImage(limitOutline)
+
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.DrawFPS(10, 10)
 		rl.ClearBackground(rl.Black)
 
-		drawSpeed(69)
-		drawRPM(1500)
-		drawBlitzer(999)
+		select {
+		case closestBlitzer = <-BlitzerChannel:
+		default:
+		}
+		select {
+		case carStats = <-CarStatsChannel:
+		default:
+		}
+
+		drawSpeed(carStats.speed)
+		drawrpm(carStats.rpm)
+		// TODO: add functionality if not blitzer was found
+		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, texture)
 
 		rl.EndDrawing()
 	}
