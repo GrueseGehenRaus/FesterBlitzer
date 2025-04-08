@@ -114,18 +114,22 @@ func drawBlitzer(distance float64, vmax int32, speedTexture rl.Texture2D, infini
 	if carSpeed >= 0 {
 		if vmax == 0 {
 			fillCount = -1
-			rl.DrawTexture(infinityTexture, 551, 65, rl.White)
+			rl.DrawTexture(infinityTexture, 551, 80, rl.White)
 		} else if vmax == -1 {
 			fillCount = 6
-			rl.DrawTexture(speedTexture, 551, 65, rl.White)
-			rl.DrawText("0", 590, 98, 40, rl.Black)
+			rl.DrawTexture(speedTexture, 551, 80, rl.White)
+			rl.DrawTextEx(font, "0", rl.Vector2{X: 590, Y: 106}, 40, 0, rl.Black)
 		} else {
 			fillCount = ((1 - distance) * 5)
 
-			rl.DrawTextEx(font, strconv.FormatFloat(distance*1000, 'f', 0, 64), rl.Vector2{X: 584, Y: 173}, 30, 0, rl.White)
+			// With Distance
+			// rl.DrawTextEx(font, strconv.FormatFloat(distance*1000, 'f', 0, 64), rl.Vector2{X: 584, Y: 173}, 30, 0, rl.White)
+			// rl.DrawTexture(speedTexture, 551, 65, rl.White)
+			// rl.DrawTextEx(font, strconv.FormatInt(int64(vmax), 10), rl.Vector2{X: 581, Y: 98}, 50, 0, rl.Black)
 
-			rl.DrawTexture(speedTexture, 551, 65, rl.White)
-			rl.DrawTextEx(font, strconv.FormatInt(int64(vmax), 10), rl.Vector2{X: 581, Y: 98}, 50, 0, rl.Black)
+			// Without Distance
+			rl.DrawTexture(speedTexture, 551, 80, rl.White)
+			rl.DrawTextEx(font, strconv.FormatInt(int64(vmax), 10), rl.Vector2{X: 575, Y: 106}, 50, 0, rl.Black)
 
 		}
 
