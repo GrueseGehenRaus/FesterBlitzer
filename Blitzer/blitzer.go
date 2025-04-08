@@ -93,12 +93,21 @@ func GetBlitzer(blitzers BlitzerDEResponse, currPos [2]float64) []Blitzer {
 // Returns distance between two points
 func GetDist(start [2]float64, end [2]float64) float64 {
 	R := 6371.0
-	dlat := end[0] - start[0]
-	dlon := end[1] - start[1]
-	a := math.Pow(math.Sin(dlat/2), 2) + math.Cos(end[0])*math.Cos(start[0])*math.Pow(math.Sin(dlon/2), 2)
+
+	lat1 := start[0] * math.Pi / 180
+	lon1 := start[1] * math.Pi / 180
+	lat2 := end[0] * math.Pi / 180
+	lon2 := end[1] * math.Pi / 180
+
+	dlat := lat2 - lat1
+	dlon := lon2 - lon1
+
+	a := math.Sin(dlat/2)*math.Sin(dlat/2) +
+		math.Cos(lat1)*math.Cos(lat2)*math.Sin(dlon/2)*math.Sin(dlon/2)
 	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
 	distance := R * c
-	return distance / 100
+	return distance
 }
 
 // Returns scan box from 4 points
