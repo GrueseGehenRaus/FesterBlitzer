@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/gen2brain/raylib-go/easings"
 	rl "github.com/gen2brain/raylib-go/raylib"
 	"github.com/rzetterberg/elmobd"
 )
@@ -51,8 +51,8 @@ func drawTrapezoid(centerX, centerY, topWidth, bottomWidth, height float32, colo
 	rl.DrawTriangle(rightTriTop, rightTriBottom, rightTriOutside, color)
 }
 
-func drawrpm(rpm int32) {
-	rpm = int32(rand.Intn(6001))
+func drawrpm(rpm float32) {
+	// rpm = int32(rand.Intn(6001))
 	// time.Sleep(time.Millisecond * 500)
 	const meterWidth = float32(80)
 	const meterHeight = float32(300)
@@ -97,12 +97,24 @@ func drawSpeed(speed int32) {
 }
 
 func drawBlitzer(distance float64, vmax int32, texture rl.Texture2D) {
+
 	centerY := 400.0
 	topWidth := 175.0
 	bottomWidth := 200.0
 	height := 40.0
+	fillCount := float64(-1)
 
-	fillCount := ((1 - distance) * 5)
+	if vmax == 0 {
+		fillCount = -1
+	} else if vmax == -1 {
+		fillCount = 6
+	} else {
+		fillCount = ((1 - distance) * 5)
+
+		rl.DrawText(strconv.FormatFloat(distance*1000, 'f', 0, 64), 584, 173, 20, rl.White)
+		rl.DrawTexture(texture, 551, 65, rl.White)
+		rl.DrawText(strconv.FormatInt(int64(vmax), 10), 581, 98, 40, rl.Black)
+	}
 
 	for i := float64(0); i < 5; i++ {
 		if i < math.Round(fillCount) {
@@ -115,13 +127,10 @@ func drawBlitzer(distance float64, vmax int32, texture rl.Texture2D) {
 		bottomWidth = bottomWidth * 0.85
 		height = height * 0.85
 	}
-
-	rl.DrawText(strconv.FormatFloat(distance*1000, 'f', 0, 64), 584, 173, 20, rl.White)
-	rl.DrawTexture(texture, 551, 65, rl.White)
-	rl.DrawText(strconv.FormatInt(int64(vmax), 10), 581, 98, 40, rl.Black)
 }
 
 func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
+	count := 0
 	for {
 		// getPos() braucht man halt und noch LastPos speichern vor schreiben vom Blitzer in den channel
 		// Blitzer types noch casen (6 ist z.B. Abstandsmessung)
@@ -130,9 +139,21 @@ func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
 		// lastPos := [2]float64{49.0161, 8.3980}
 		// currPos := [2]float64{49.0189, 8.3974}
 
+		positions := [][2]float64{
+			{48.521266, 8.868477},
+			{48.518950, 8.869078},
+			{48.517287, 8.868842},
+			{48.515966, 8.869765},
+			{48.515276, 8.870355},
+			{48.512568, 8.871718},
+			{48.510862, 8.871846},
+			{48.509369, 8.872361},
+			{48.508445, 8.873134},
+		}
+
 		// Hailfingen nach Seebron
-		lastPos := [2]float64{48.515966, 8.869765}
-		currPos := [2]float64{48.515276, 8.870355}
+		lastPos := positions[count]
+		currPos := positions[count+1]
 
 		scanBox := Blitzer.GetScanBox(lastPos, currPos)
 		boxStart, boxEnd := Blitzer.GetBoundingBox(scanBox)
@@ -142,20 +163,26 @@ func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
 
 		resp, err := http.Get(url)
 		if err != nil {
+			print("INTERNET OFF")
 			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
 			time.Sleep(time.Second)
-			return
+			continue
 		}
 		response := Blitzer.Decode(resp)
 		Blitzers := Blitzer.GetBlitzer(response, currPos)
 		if len(Blitzers) == 0 {
 			print("No Blitzer found")
-			// auch hier UI handling wenn es keine Blitzer hat? Maybe Autobahn keine Begrenzung Schild xd
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: 0}
 			time.Sleep(time.Second)
-			return
+		} else {
+			BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
+			time.Sleep(time.Second)
 		}
-		BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
-		time.Sleep(time.Second)
+		if count == 7 {
+			count = 0
+		} else {
+			count += 1
+		}
 	}
 }
 
@@ -182,11 +209,13 @@ func getCarStats(CarChannel chan<- Car, device *elmobd.Device) {
 			log.Fatal(err)
 		}
 
-		rpm, err := strconv.ParseInt(response[0].ValueAsLit(), 10, 32)
+		rpm, err := strconv.ParseFloat(response[0].ValueAsLit(), 64)
 		speed, err := strconv.ParseInt(response[1].ValueAsLit(), 10, 32)
 
+		// print("RPM: ", rpm, "\n")
+
 		CarChannel <- Car{rpm: int32(rpm), speed: int32(speed)}
-		time.Sleep(time.Millisecond * 16)
+		time.Sleep(time.Millisecond * 160)
 	}
 }
 
@@ -198,7 +227,7 @@ func main() {
 	rl.SetTargetFPS(60)
 
 	// Init OBD2 Reader with path/to/usb
-	//device := initDevice("/dev/tty.usbserial-11310")
+	// device := initDevice("/dev/tty.usbserial-11340")
 	device := initDevice("test://")
 
 	CarStatsChannel := make(chan Car, 2048)
@@ -213,6 +242,10 @@ func main() {
 	rl.ImageResize(limitOutline, 100, 100)
 	texture := rl.LoadTextureFromImage(limitOutline)
 
+	framesCounter := 0
+	oldRPM := int32(0)
+	rpm := float32(0)
+
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
 		rl.DrawFPS(10, 10)
@@ -226,12 +259,19 @@ func main() {
 		case carStats = <-CarStatsChannel:
 		default:
 		}
+		rpm = easings.LinearIn(float32(framesCounter), float32(oldRPM), float32(carStats.rpm)-float32(oldRPM), 30)
 
 		drawSpeed(carStats.speed)
-		drawrpm(carStats.rpm)
+		drawrpm(rpm)
 		// TODO: add functionality if not blitzer was found
 		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, texture)
 
 		rl.EndDrawing()
+
+		framesCounter += 1
+		if framesCounter >= 30 {
+			framesCounter = 0
+			oldRPM = carStats.rpm
+		}
 	}
 }

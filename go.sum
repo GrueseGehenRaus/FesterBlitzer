@@ -1,5 +1,7 @@
 github.com/ebitengine/purego v0.8.1 h1:sdRKd6plj7KYW33EH5As6YKfe8m9zbN9JMrOjNVF/BE=
 github.com/ebitengine/purego v0.8.1/go.mod h1:iIjxzd6CiRiOG0UyXP+V1+jWqUXVjPKLAI0mRfJZTmQ=
+github.com/gen2brain/raylib-go/easings v0.0.0-20250327103758-b542022337b8 h1:yeEnkG6sleJRdR9gyVW8rcNiWBLbufQS1CcelmpjIow=
+github.com/gen2brain/raylib-go/easings v0.0.0-20250327103758-b542022337b8/go.mod h1:tvwfxDWbHojl/iRFMuBVhydd1IaObUiHpYyG1XKG5Po=
 github.com/gen2brain/raylib-go/raylib v0.0.0-20241203091912-3b89a24e68d1 h1:IPvCrEceknIpLEFH3z+BTI9CjkfStJt7NFsDjfZ2f/0=
 github.com/gen2brain/raylib-go/raylib v0.0.0-20241203091912-3b89a24e68d1/go.mod h1:BaY76bZk7nw1/kVOSQObPY1v1iwVE1KHAGMfvI6oK1Q=
 github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07 h1:UyzmZLoiDWMRywV4DUYb9Fbt8uiOSooupjTq10vpvnU=
