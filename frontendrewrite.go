@@ -91,41 +91,55 @@ func drawrpm(rpm float32) {
 	}
 }
 
-func drawSpeed(speed int32) {
-	rl.DrawText(strconv.FormatInt(int64(speed), 10), int32(rl.GetScreenWidth()/2)-50, int32(rl.GetScreenHeight()/2)-50, 100, rl.White)
-	rl.DrawText("km/h", int32(rl.GetScreenWidth()/2)-50, int32(rl.GetScreenHeight()/2)+50, 50, rl.White)
+func drawSpeed(speed int32, font rl.Font) {
+	//70
+	if speed < 10 {
+		rl.DrawTextEx(font, strconv.FormatInt(int64(speed), 10), rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 35, Y: float32(rl.GetScreenHeight()/2) - 50}, 125, 0, rl.White)
+	} else if speed < 100 {
+		rl.DrawTextEx(font, strconv.FormatInt(int64(speed), 10), rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 70, Y: float32(rl.GetScreenHeight()/2) - 50}, 125, 0, rl.White)
+	} else {
+		rl.DrawTextEx(font, strconv.FormatInt(int64(speed), 10), rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 105, Y: float32(rl.GetScreenHeight()/2) - 50}, 125, 0, rl.White)
+	}
+	rl.DrawTextEx(font, "km/h", rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 55, Y: float32(rl.GetScreenHeight()/2) + 50}, 50, 0, rl.White)
 }
 
-func drawBlitzer(distance float64, vmax int32, texture rl.Texture2D) {
-
+func drawBlitzer(distance float64, vmax int32, speedTexture rl.Texture2D, infinityTexture rl.Texture2D, carSpeed int32, font rl.Font) {
 	centerY := 400.0
 	topWidth := 175.0
 	bottomWidth := 200.0
 	height := 40.0
 	fillCount := float64(-1)
 
-	if vmax == 0 {
-		fillCount = -1
-	} else if vmax == -1 {
-		fillCount = 6
-	} else {
-		fillCount = ((1 - distance) * 5)
-
-		rl.DrawText(strconv.FormatFloat(distance*1000, 'f', 0, 64), 584, 173, 20, rl.White)
-		rl.DrawTexture(texture, 551, 65, rl.White)
-		rl.DrawText(strconv.FormatInt(int64(vmax), 10), 581, 98, 40, rl.Black)
-	}
-
-	for i := float64(0); i < 5; i++ {
-		if i < math.Round(fillCount) {
-			drawTrapezoid(600, float32(centerY), float32(topWidth), float32(bottomWidth), float32(height), rl.Green)
+	// if carSpeed >= 15 {
+	if carSpeed >= 0 {
+		if vmax == 0 {
+			fillCount = -1
+			rl.DrawTexture(infinityTexture, 551, 65, rl.White)
+		} else if vmax == -1 {
+			fillCount = 6
+			rl.DrawTexture(speedTexture, 551, 65, rl.White)
+			rl.DrawText("0", 590, 98, 40, rl.Black)
 		} else {
-			drawTrapezoid(600, float32(centerY), float32(topWidth), float32(bottomWidth), float32(height), rl.Gray)
+			fillCount = ((1 - distance) * 5)
+
+			rl.DrawTextEx(font, strconv.FormatFloat(distance*1000, 'f', 0, 64), rl.Vector2{X: 584, Y: 173}, 30, 0, rl.White)
+
+			rl.DrawTexture(speedTexture, 551, 65, rl.White)
+			rl.DrawTextEx(font, strconv.FormatInt(int64(vmax), 10), rl.Vector2{X: 581, Y: 98}, 50, 0, rl.Black)
+
 		}
-		centerY = centerY * 0.85
-		topWidth = topWidth * 0.85
-		bottomWidth = bottomWidth * 0.85
-		height = height * 0.85
+
+		for i := float64(0); i < 5; i++ {
+			if i <= math.Round(fillCount) {
+				drawTrapezoid(600, float32(centerY), float32(topWidth), float32(bottomWidth), float32(height), rl.Green)
+			} else {
+				drawTrapezoid(600, float32(centerY), float32(topWidth), float32(bottomWidth), float32(height), rl.Gray)
+			}
+			centerY = centerY * 0.85
+			topWidth = topWidth * 0.85
+			bottomWidth = bottomWidth * 0.85
+			height = height * 0.85
+		}
 	}
 }
 
@@ -161,7 +175,11 @@ func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
 		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
 			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
 
-		resp, err := http.Get(url)
+		client := http.Client{
+			Timeout: time.Second * 15,
+		}
+
+		resp, err := client.Get(url)
 		if err != nil {
 			print("INTERNET OFF")
 			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
@@ -240,7 +258,13 @@ func main() {
 
 	limitOutline := rl.LoadImage("Assets/SpeedSign.png")
 	rl.ImageResize(limitOutline, 100, 100)
-	texture := rl.LoadTextureFromImage(limitOutline)
+	speedTexture := rl.LoadTextureFromImage(limitOutline)
+
+	infinity := rl.LoadImage("Assets/infinity.png")
+	rl.ImageResize(infinity, 100, 100)
+	infinityTexture := rl.LoadTextureFromImage(infinity)
+
+	font := rl.LoadFontEx("Assets/AzeretMono-SemiBold.ttf", 125, nil, 0)
 
 	framesCounter := 0
 	oldRPM := int32(0)
@@ -261,10 +285,9 @@ func main() {
 		}
 		rpm = easings.LinearIn(float32(framesCounter), float32(oldRPM), float32(carStats.rpm)-float32(oldRPM), 30)
 
-		drawSpeed(carStats.speed)
+		drawSpeed(carStats.speed, font)
 		drawrpm(rpm)
-		// TODO: add functionality if not blitzer was found
-		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, texture)
+		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, speedTexture, infinityTexture, carStats.speed, font)
 
 		rl.EndDrawing()
 
