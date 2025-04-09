@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
@@ -52,15 +53,43 @@ func drawTrapezoid(centerX, centerY, topWidth, bottomWidth, height float32, colo
 }
 
 func drawrpm(rpm float32) {
-	// rpm = int32(rand.Intn(6001))
-	// time.Sleep(time.Millisecond * 500)
-	const meterWidth = float32(80)
-	const meterHeight = float32(300)
-	meterX := float32(rl.GetScreenWidth()/2) - 240
-	meterY := float32(rl.GetScreenHeight()/2) - 150
+	const (
+		meterWidth  = float32(80)
+		meterHeight = float32(300)
+		maxRPM      = float32(5500)
+		majorStep   = float32(1000) // 1k RPM per step
+		minorStep   = float32(500)  // half-step ticks
+		fontSize    = 20
+	)
 
-	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{X: meterX, Y: meterY, Width: meterWidth, Height: meterHeight},
-		0.5, 0, 2.0, rl.Fade(rl.Blue, 0.4))
+	meterX := float32(rl.GetScreenWidth()/2) - 240
+	meterY := float32(rl.GetScreenHeight()/2) - meterHeight/2
+	labelX := meterX - 40
+
+	// Draw RPM meter outline
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{
+		X:      meterX,
+		Y:      meterY,
+		Width:  meterWidth,
+		Height: meterHeight,
+	}, 0.5, 0, 2.0, rl.Fade(rl.Blue, 0.4))
+
+	// Draw major (numbered) indicators: "1", "2", ..., "6"
+	for val := float32(1000); val <= maxRPM; val += majorStep {
+		posY := meterY + meterHeight - (val / maxRPM * meterHeight)
+		label := fmt.Sprintf("%.0f", val/1000) // convert 1000 -> "1", 2000 -> "2", ...
+		rl.DrawText(label, int32(labelX)+13, int32(posY)-fontSize/2, fontSize, rl.White)
+		rl.DrawLine(int32(meterX-10), int32(posY), int32(meterX), int32(posY), rl.Gray)
+	}
+
+	// Draw minor (unlabeled) indicators every 500 RPM
+	for val := float32(500); val < maxRPM; val += minorStep {
+		if int(val)%int(majorStep) == 0 {
+			continue // skip if it's a major tick
+		}
+		posY := meterY + meterHeight - (val / maxRPM * meterHeight)
+		rl.DrawLine(int32(meterX-5), int32(posY), int32(meterX), int32(posY), rl.DarkGray)
+	}
 
 	if rpm > 0 {
 		// Compute percentage fill
@@ -185,15 +214,23 @@ func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
 
 		resp, err := client.Get(url)
 		if err != nil {
-			print("INTERNET OFF")
+			print("INTERNET OFF \n")
 			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
 			time.Sleep(time.Second)
 			continue
 		}
 		response := Blitzer.Decode(resp)
-		Blitzers := Blitzer.GetBlitzer(response, currPos)
+
+		if response == nil {
+			print("Error decoding \n")
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
+			time.Sleep(time.Second)
+			continue
+		}
+
+		Blitzers := Blitzer.GetBlitzer(*response, currPos)
 		if len(Blitzers) == 0 {
-			print("No Blitzer found")
+			print("No Blitzer found \n")
 			BlitzerChannel <- Blitzer.Blitzer{Vmax: 0}
 			time.Sleep(time.Second)
 		} else {
@@ -218,7 +255,8 @@ func initDevice(path string) *elmobd.Device {
 	device, err := elmobd.NewDevice(*serialPath, false)
 
 	if err != nil {
-		print("Check switch and port")
+		print("Check switch and port \n")
+		os.Exit(0)
 	}
 
 	return device
@@ -244,7 +282,7 @@ func getCarStats(CarChannel chan<- Car, device *elmobd.Device) {
 func main() {
 	screenWidth := 800.0
 	screenHeight := 480.0
-	rl.InitWindow(int32(screenWidth), int32(screenHeight), "FesterBlitzer")
+	rl.InitWindow(int32(screenWidth), int32(screenHeight), "FesterBlitzer 🫴🫳")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
 

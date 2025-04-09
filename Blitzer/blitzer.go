@@ -28,7 +28,7 @@ type BlitzerDEResponse struct {
 		CreateDate  string `json:"create_date"`
 		ConfirmDate string `json:"confirm_date"`
 		Info        struct {
-			QltyCountryRoad string    `json:"qltyCountryRoad"`
+			QltyCountryRoad string `json:"qltyCountryRoad"`
 			Confirmed       int    `json:"confirmed"`
 			Gesperrt        int    `json:"gesperrt"`
 			Quality         int    `json:"quality"`
@@ -65,15 +65,22 @@ type Point struct {
 }
 
 // Decodes http response
-func Decode(resp *http.Response) BlitzerDEResponse {
+func Decode(resp *http.Response) *BlitzerDEResponse {
 	decoder := json.NewDecoder(resp.Body)
 	var t BlitzerDEResponse
 	err := decoder.Decode(&t)
+
+	// Print response:
+	// bodyBytes, _ := io.ReadAll(resp.Body)
+	// fmt.Println(string(bodyBytes))
+	// err := json.Unmarshal(bodyBytes, &t)
+
 	if err != nil {
-		panic(err)
+		print(err)
+		return nil
 	}
 	defer resp.Body.Close()
-	return t
+	return &t
 }
 
 // Returns array of blitzers from response
