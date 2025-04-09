@@ -52,7 +52,7 @@ func drawTrapezoid(centerX, centerY, topWidth, bottomWidth, height float32, colo
 	rl.DrawTriangle(rightTriTop, rightTriBottom, rightTriOutside, color)
 }
 
-func drawrpm(rpm float32) {
+func drawrpm(rpm float32, font rl.Font) {
 	const (
 		meterWidth  = float32(80)
 		meterHeight = float32(300)
@@ -78,7 +78,7 @@ func drawrpm(rpm float32) {
 	for val := float32(1000); val <= maxRPM; val += majorStep {
 		posY := meterY + meterHeight - (val / maxRPM * meterHeight)
 		label := fmt.Sprintf("%.0f", val/1000) // convert 1000 -> "1", 2000 -> "2", ...
-		rl.DrawText(label, int32(labelX)+13, int32(posY)-fontSize/2, fontSize, rl.White)
+		rl.DrawTextEx(font, label, rl.Vector2{X: float32(labelX) + 15, Y: float32(posY) - fontSize/2}, fontSize, 0, rl.White)
 		rl.DrawLine(int32(meterX-10), int32(posY), int32(meterX), int32(posY), rl.Gray)
 	}
 
@@ -328,7 +328,7 @@ func main() {
 		rpm = easings.LinearIn(float32(framesCounter), float32(oldRPM), float32(carStats.rpm)-float32(oldRPM), 30)
 
 		drawSpeed(carStats.speed, font)
-		drawrpm(rpm)
+		drawrpm(rpm, font)
 		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, speedTexture, infinityTexture, carStats.speed, font)
 
 		rl.EndDrawing()
