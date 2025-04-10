@@ -139,8 +139,7 @@ func drawBlitzer(distance float64, vmax int32, speedTexture rl.Texture2D, infini
 	height := 40.0
 	fillCount := float64(-1)
 
-	// if carSpeed >= 15 {
-	if carSpeed >= 0 {
+	if carSpeed >= 10 {
 		if vmax == 0 {
 			fillCount = -1
 			rl.DrawTexture(infinityTexture, 551, 80, rl.White)
@@ -173,6 +172,22 @@ func drawBlitzer(distance float64, vmax int32, speedTexture rl.Texture2D, infini
 			bottomWidth = bottomWidth * 0.85
 			height = height * 0.85
 		}
+	} else {
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{
+			X:      float32(rl.GetScreenWidth()/2) + 150,
+			Y:      float32(rl.GetScreenHeight()/2) - 150,
+			Width:  80,
+			Height: 300,
+		}, 0.5, 0, 2.0, rl.Fade(rl.Blue, 0.4))
+
+		rl.DrawRectangleRounded(rl.Rectangle{
+			X:      float32(rl.GetScreenWidth()/2) + 150,
+			Y:      float32(rl.GetScreenHeight()/2) + 80,
+			Width:  80,
+			Height: 70,
+		}, 0.5, 0, rl.Fade(rl.Green, 1))
+
+		rl.DrawRectangle(int32(rl.GetScreenWidth()/2)+150, int32(rl.GetScreenHeight()/2)- 20, 80, 120, rl.Fade(rl.Green, 1))
 	}
 }
 
