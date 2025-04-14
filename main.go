@@ -4,7 +4,6 @@ import (
 	Blitzer "FesterBlitzer/Blitzer"
 	"flag"
 	"fmt"
-	"image/color"
 	"log"
 	"math"
 	"net/http"
@@ -12,57 +11,256 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/gen2brain/raylib-go/easings"
 	rl "github.com/gen2brain/raylib-go/raylib"
 	"github.com/rzetterberg/elmobd"
 )
 
-type Eco struct {
-	rpm      float32
-	throttle float32
+type Car struct {
+	rpm   int32
+	speed int32
 }
 
-func getNeedlePos(radius float32, degree float32) rl.Vector2 {
-	return rl.Vector2{X: radius * float32(math.Cos(float64(degree*math.Pi/180.0))), Y: radius * float32(math.Sin(float64(degree*math.Pi/180.0)))}
+func drawTriangle(centerX float32, centerY float32, width float32, height float32, color rl.Color) {
+	top := rl.Vector2{X: centerX, Y: centerY - height/2}
+	bottomLeft := rl.Vector2{X: centerX - width/2, Y: centerY + height/2}
+	bottomRight := rl.Vector2{X: centerX + width/2, Y: centerY + height/2}
+
+	rl.DrawTriangle(top, bottomLeft, bottomRight, color)
 }
 
-func getRPMDegrees(rpm float32) float32 {
-	if rpm > 6000 {
-		return 260
+func drawTrapezoid(centerX, centerY, topWidth, bottomWidth, height float32, color rl.Color) {
+	rectWidth := topWidth
+	rectHeight := height
+	rectX := centerX - topWidth/2
+	rectY := centerY - height/2
+
+	rl.DrawRectangleRec(rl.Rectangle{X: rectX, Y: rectY, Width: rectWidth, Height: rectHeight}, color)
+
+	widthDiff := (bottomWidth - topWidth) / 2
+
+	leftTriTop := rl.Vector2{X: rectX, Y: rectY}
+	leftTriBottom := rl.Vector2{X: rectX, Y: rectY + rectHeight}
+	leftTriOutside := rl.Vector2{X: rectX - widthDiff, Y: rectY + rectHeight} // Ensure bottom alignment
+
+	rl.DrawTriangle(leftTriOutside, leftTriBottom, leftTriTop, color)
+
+	rightTriTop := rl.Vector2{X: rectX + rectWidth, Y: rectY}
+	rightTriBottom := rl.Vector2{X: rectX + rectWidth, Y: rectY + rectHeight}
+	rightTriOutside := rl.Vector2{X: rectX + rectWidth + widthDiff, Y: rectY + rectHeight}
+
+	rl.DrawTriangle(rightTriTop, rightTriBottom, rightTriOutside, color)
+}
+
+func drawrpm(rpm float32, font rl.Font) {
+	const (
+		meterWidth  = float32(80)
+		meterHeight = float32(300)
+		maxRPM      = float32(5500)
+		majorStep   = float32(1000) // 1k RPM per step
+		minorStep   = float32(500)  // half-step ticks
+		fontSize    = 20
+	)
+
+	meterX := float32(rl.GetScreenWidth()/2) - 240
+	meterY := float32(rl.GetScreenHeight()/2) - meterHeight/2
+	labelX := meterX - 40
+
+	// Draw RPM meter outline
+	rl.DrawRectangleRoundedLinesEx(rl.Rectangle{
+		X:      meterX,
+		Y:      meterY,
+		Width:  meterWidth,
+		Height: meterHeight,
+	}, 0.5, 0, 2.0, rl.Fade(rl.Blue, 0.4))
+
+	// Draw major (numbered) indicators: "1", "2", ..., "6"
+	for val := float32(1000); val <= maxRPM; val += majorStep {
+		posY := meterY + meterHeight - (val / maxRPM * meterHeight)
+		label := fmt.Sprintf("%.0f", val/1000) // convert 1000 -> "1", 2000 -> "2", ...
+		rl.DrawTextEx(font, label, rl.Vector2{X: float32(labelX) + 15, Y: float32(posY) - fontSize/2}, fontSize, 0, rl.White)
+		rl.DrawLine(int32(meterX-10), int32(posY), int32(meterX), int32(posY), rl.Gray)
 	}
-	return float32(rpm/6000*140 + 120)
-}
 
-func getThrottleDegrees(throttle float32) float32 {
-	fmt.Print(strconv.FormatFloat(float64(throttle*40)+71, 'f', 6, 32))
-	return float32(throttle*40 + 71)
-}
-
-func getRPMColor(rpm float32) rl.Color {
-	// TODO: add gradient
-	switch rm := int(rpm); {
-	case rm < 1500:
-		return color.RGBA{R: 144, G: 238, B: 144, A: 255}
-	case rm < 3500:
-		return color.RGBA{R: 0, G: 128, B: 0, A: 255}
-	case rm < 5000:
-		return color.RGBA{R: 255, G: 200, B: 87, A: 255}
-	case rm < 6000:
-		return color.RGBA{R: 200, G: 0, B: 0, A: 255}
+	// Draw minor (unlabeled) indicators every 500 RPM
+	for val := float32(500); val < maxRPM; val += minorStep {
+		if int(val)%int(majorStep) == 0 {
+			continue // skip if it's a major tick
+		}
+		posY := meterY + meterHeight - (val / maxRPM * meterHeight)
+		rl.DrawLine(int32(meterX-5), int32(posY), int32(meterX), int32(posY), rl.DarkGray)
 	}
-	return rl.Gray
+
+	if rpm > 0 {
+		// Compute percentage fill
+		percent := float32(rpm) / 6000
+		fillHeight := meterHeight * percent
+		if fillHeight > meterHeight {
+			fillHeight = meterHeight
+		}
+
+		roundedHeight := float32(70) // Rounded part at the bottom
+
+		// Ensure minimum fill height to cover the rounded part
+		if fillHeight < roundedHeight {
+			fillHeight = roundedHeight
+		}
+
+		// Draw the solid rectangular fill (flat top, increased overlap)
+		rl.DrawRectangle(int32(meterX), int32(meterY+meterHeight-fillHeight),
+			int32(meterWidth), int32(fillHeight-roundedHeight+20), rl.Fade(rl.Maroon, 1)) // Increased overlap
+
+		// Draw the rounded bottom part
+		rl.DrawRectangleRounded(rl.Rectangle{
+			X:      meterX,
+			Y:      meterY + meterHeight - roundedHeight, // Always at the bottom
+			Width:  meterWidth,
+			Height: roundedHeight,
+		}, 0.5, 0, rl.Fade(rl.Maroon, 1))
+	}
 }
 
-func drawKMH(speed int) {
+func drawSpeed(speed int32, font rl.Font) {
+	//70
 	if speed < 10 {
-		rl.DrawText(strconv.Itoa(speed), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)-30, 100, rl.White)
+		rl.DrawTextEx(font, strconv.FormatInt(int64(speed), 10), rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 35, Y: float32(rl.GetScreenHeight()/2) - 50}, 125, 0, rl.White)
 	} else if speed < 100 {
-		rl.DrawText(strconv.Itoa(speed), int32(rl.GetScreenWidth()/2)-50, int32(rl.GetScreenHeight()/2)-30, 100, rl.White)
-	} else if speed < 220 {
-		rl.DrawText(strconv.Itoa(speed), int32(rl.GetScreenWidth()/2)-80, int32(rl.GetScreenHeight()/2)-30, 100, rl.White)
+		rl.DrawTextEx(font, strconv.FormatInt(int64(speed), 10), rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 70, Y: float32(rl.GetScreenHeight()/2) - 50}, 125, 0, rl.White)
+	} else {
+		rl.DrawTextEx(font, strconv.FormatInt(int64(speed), 10), rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 105, Y: float32(rl.GetScreenHeight()/2) - 50}, 125, 0, rl.White)
+	}
+	rl.DrawTextEx(font, "km/h", rl.Vector2{X: float32(rl.GetScreenWidth()/2) - 55, Y: float32(rl.GetScreenHeight()/2) + 50}, 50, 0, rl.White)
+}
+
+func drawBlitzer(distance float64, vmax int32, speedTexture rl.Texture2D, infinityTexture rl.Texture2D, carSpeed int32, font rl.Font) {
+	centerY := 400.0
+	topWidth := 175.0
+	bottomWidth := 200.0
+	height := 40.0
+	fillCount := float64(-1)
+
+	if carSpeed >= 10 {
+		if vmax == 0 {
+			fillCount = -1
+			rl.DrawTexture(infinityTexture, 551, 80, rl.White)
+		} else if vmax == -1 {
+			fillCount = 6
+			rl.DrawTexture(speedTexture, 551, 80, rl.White)
+			rl.DrawTextEx(font, "0", rl.Vector2{X: 590, Y: 106}, 40, 0, rl.Black)
+		} else {
+			fillCount = ((1 - distance) * 5)
+
+			// With Distance
+			// rl.DrawTextEx(font, strconv.FormatFloat(distance*1000, 'f', 0, 64), rl.Vector2{X: 584, Y: 173}, 30, 0, rl.White)
+			// rl.DrawTexture(speedTexture, 551, 65, rl.White)
+			// rl.DrawTextEx(font, strconv.FormatInt(int64(vmax), 10), rl.Vector2{X: 581, Y: 98}, 50, 0, rl.Black)
+
+			// Without Distance
+			rl.DrawTexture(speedTexture, 551, 80, rl.White)
+			rl.DrawTextEx(font, strconv.FormatInt(int64(vmax), 10), rl.Vector2{X: 575, Y: 106}, 50, 0, rl.Black)
+
+		}
+
+		for i := float64(0); i < 5; i++ {
+			if i <= math.Round(fillCount) {
+				drawTrapezoid(600, float32(centerY), float32(topWidth), float32(bottomWidth), float32(height), rl.Green)
+			} else {
+				drawTrapezoid(600, float32(centerY), float32(topWidth), float32(bottomWidth), float32(height), rl.Gray)
+			}
+			centerY = centerY * 0.85
+			topWidth = topWidth * 0.85
+			bottomWidth = bottomWidth * 0.85
+			height = height * 0.85
+		}
+	} else {
+		rl.DrawRectangleRoundedLinesEx(rl.Rectangle{
+			X:      float32(rl.GetScreenWidth()/2) + 150,
+			Y:      float32(rl.GetScreenHeight()/2) - 150,
+			Width:  80,
+			Height: 300,
+		}, 0.5, 0, 2.0, rl.Fade(rl.Blue, 0.4))
+
+		rl.DrawRectangleRounded(rl.Rectangle{
+			X:      float32(rl.GetScreenWidth()/2) + 150,
+			Y:      float32(rl.GetScreenHeight()/2) + 80,
+			Width:  80,
+			Height: 70,
+		}, 0.5, 0, rl.Fade(rl.Green, 1))
+
+		rl.DrawRectangle(int32(rl.GetScreenWidth()/2)+150, int32(rl.GetScreenHeight()/2)- 20, 80, 120, rl.Fade(rl.Green, 1))
 	}
 }
 
-func _initDevice(path string) *elmobd.Device {
+func getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
+	count := 0
+	for {
+		// getPos() braucht man halt und noch LastPos speichern vor schreiben vom Blitzer in den channel
+		// Blitzer types noch casen (6 ist z.B. Abstandsmessung)
+
+		// HEK nach Norden
+		// lastPos := [2]float64{49.0161, 8.3980}
+		// currPos := [2]float64{49.0189, 8.3974}
+
+		positions := [][2]float64{
+			{48.521266, 8.868477},
+			{48.518950, 8.869078},
+			{48.517287, 8.868842},
+			{48.515966, 8.869765},
+			{48.515276, 8.870355},
+			{48.512568, 8.871718},
+			{48.510862, 8.871846},
+			{48.509369, 8.872361},
+			{48.508445, 8.873134},
+		}
+
+		// Hailfingen nach Seebron
+		lastPos := positions[count]
+		currPos := positions[count+1]
+
+		scanBox := Blitzer.GetScanBox(lastPos, currPos)
+		boxStart, boxEnd := Blitzer.GetBoundingBox(scanBox)
+
+		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
+			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
+
+		client := http.Client{
+			Timeout: time.Second * 15,
+		}
+
+		resp, err := client.Get(url)
+		if err != nil {
+			print("INTERNET OFF \n")
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
+			time.Sleep(time.Second)
+			continue
+		}
+		response := Blitzer.Decode(resp)
+
+		if response == nil {
+			print("Error decoding \n")
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
+			time.Sleep(time.Second)
+			continue
+		}
+
+		Blitzers := Blitzer.GetBlitzer(*response, currPos)
+		if len(Blitzers) == 0 {
+			print("No Blitzer found \n")
+			BlitzerChannel <- Blitzer.Blitzer{Vmax: 0}
+			time.Sleep(time.Second)
+		} else {
+			BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
+			time.Sleep(time.Second)
+		}
+		if count == 7 {
+			count = 0
+		} else {
+			count += 1
+		}
+	}
+}
+
+func initDevice(path string) *elmobd.Device {
 	serialPath := flag.String(
 		"serial",
 		path,
@@ -72,317 +270,88 @@ func _initDevice(path string) *elmobd.Device {
 	device, err := elmobd.NewDevice(*serialPath, false)
 
 	if err != nil {
-		log.Fatalf("Check switch and port")
+		print("Check switch and port \n")
+		os.Exit(0)
 	}
 
 	return device
 }
 
-func getEngineRPM(device elmobd.Device, RPMChannel chan<- float32) {
+func getCarStats(CarChannel chan<- Car, device *elmobd.Device) {
 	for {
-		response, err := device.RunOBDCommand(elmobd.NewEngineRPM())
+		response, err := device.RunManyOBDCommands([]elmobd.OBDCommand{elmobd.NewEngineRPM(), elmobd.NewVehicleSpeed()})
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
+		rpm, err := strconv.ParseFloat(response[0].ValueAsLit(), 64)
+		speed, err := strconv.ParseInt(response[1].ValueAsLit(), 10, 32)
 
-		RPMChannel <- float32(MonthDate)
-		time.Sleep(time.Millisecond * 16)
-	}
-}
+		// print("RPM: ", rpm, "\n")
 
-func getCarSpeed(device elmobd.Device, SpeedChannel chan<- int, file *os.File) {
-	log.SetOutput(file)
-	log.Print("lehm")
-	for {
-		response, err := device.RunOBDCommand(elmobd.NewVehicleSpeed())
-		if err != nil {
-			log.Print(err)
-		}
-
-		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
-		SpeedChannel <- int(MonthDate)
-		// 60 FPS = 16ms
-		time.Sleep(time.Millisecond * 16)
-	}
-}
-
-func getThrottlePos(device elmobd.Device, ThrottleChannel chan<- float32) {
-	for {
-		response, err := device.RunOBDCommand(elmobd.NewThrottlePosition())
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		//log.Print(response.ValueAsLit())
-		//log.Print(elmobd.NewThrottlePosition().Value)
-
-		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
-
-		// log.Print("Throttle%: ", MonthDate)
-
-		ThrottleChannel <- float32(MonthDate)
-		time.Sleep(time.Millisecond * 16)
-	}
-}
-
-func getRuntimeSinceEngineStart(device elmobd.Device, RuntimeChannel chan<- float32) {
-	for {
-		response, err := device.RunOBDCommand(elmobd.NewRuntimeSinceStart())
-		if err != nil {
-			log.Fatal(err)
-		}
-		MonthDate, err := strconv.ParseFloat(response.ValueAsLit(), 32)
-
-		RuntimeChannel <- float32(MonthDate)
-		time.Sleep(time.Millisecond * 16)
-	}
-}
-
-func getEcoScore(EcoChannel chan Eco, RPMChannel <-chan float32, ThrottleChannel <-chan float32, RuntimeChannel <-chan float32) {
-	rpm := float32(0)
-	throttle := float32(0)
-	count := float32(0)
-	for {
-		for count < 60 {
-			// man muss schauen wie sehr sich das verschiebt. ggf 0.96 * time.Second um sicher die 60s zu erreichen
-			for range time.Tick(time.Second) {
-				rpm += evalRPM(<-RPMChannel)
-				throttle += evalThrottle(<-ThrottleChannel)
-				count++
-			}
-		}
-		currentEco := <-EcoChannel
-		runtime := <-RuntimeChannel
-		minutes := float32(int32(runtime / 60))
-		rpm = rpm/count*(1/minutes) + currentEco.rpm*(1-(1/minutes))
-		throttle = throttle/count*(1/minutes) + currentEco.throttle*(1-(1/minutes))
-		EcoChannel <- Eco{rpm, throttle}
-		rpm = 0
-		throttle = 0
-		count = 0
-	}
-}
-
-func evalRPM(rpm float32) float32 {
-	if rpm <= 2500 {
-		return 100.0
-	}
-	return 100 - ((rpm - 2500) / (6000 - 2500) * 100)
-}
-
-func evalThrottle(throttle float32) float32 {
-	if throttle <= 50 {
-		return 100.0
-	}
-	return 100 - ((throttle - 50) / 50 * 100)
-}
-
-func _getBlitzer(BlitzerChannel chan<- Blitzer.Blitzer) {
-	for {
-		// getPos() braucht man halt und noch lastpos speichern vor schreiben vom Blitzer in den channel
-		// Blitzer types noch casen (6 ist z.B. Abstandsmessung)
-
-		// HEK nach Norden
-		//lastPos := [2]float64{49.0161, 8.3980}
-		//currPos := [2]float64{49.0189, 8.3974}
-
-		// Hailfingen nach Seebron
-		lastPos := [2]float64{48.515966, 8.869765}
-		currPos := [2]float64{48.515276, 8.870355}
-
-		scanBox := Blitzer.GetScanBox(lastPos, currPos)
-		boxStart, boxEnd := Blitzer.GetBoundingBox(scanBox)
-
-		url := fmt.Sprintf("https://cdn2.atudo.net/api/4.0/pois.php?type=22,26,20,101,102,103,104,105,106,107,108,109,110,111,112,113,115,117,114,ts,0,1,2,3,4,5,6,21,23,24,25,29,vwd,traffic&z=17&box=%f,%f,%f,%f",
-			boxStart[0], boxStart[1], boxEnd[0], boxEnd[1])
-		print(url)
-
-		resp, err := http.Get(url)
-		if err != nil {
-			BlitzerChannel <- Blitzer.Blitzer{Vmax: -1}
-			time.Sleep(time.Second)
-			return
-		}
-		response := Blitzer.Decode(resp)
-		Blitzers := Blitzer.GetBlitzer(response, currPos)
-		if len(Blitzers) == 0 {
-			// auch hier UI handling wenn es keine Blitzer hat? Maybe Autobahn keine Begrenzung Schild xd
-			time.Sleep(time.Second)
-			return
-		}
-		BlitzerChannel <- Blitzer.GetClosestBlitzer(Blitzers)
-		time.Sleep(time.Second)
+		CarChannel <- Car{rpm: int32(rpm), speed: int32(speed)}
+		time.Sleep(time.Millisecond * 160)
 	}
 }
 
 func main() {
-	file, err := os.OpenFile("log.txt", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Setting up the window
-	rl.InitWindow(int32(rl.GetScreenWidth()), int32(rl.GetScreenHeight()), "Fester Blitzer in 500m!")
+	screenWidth := 800.0
+	screenHeight := 480.0
+	rl.InitWindow(int32(screenWidth), int32(screenHeight), "FesterBlitzer 🫴🫳")
 	defer rl.CloseWindow()
 	rl.SetTargetFPS(60)
-	rl.ToggleFullscreen()
-	rl.DrawFPS(1, 1)
 
 	// Init OBD2 Reader with path/to/usb
-	//device := initDevice("/dev/tty.usbserial-11310")
+	// device := initDevice("/dev/tty.usbserial-11340")
 	device := initDevice("test://")
 
-	// RPM definitions
-	RPMChannel := make(chan float32, 2048)
-	go getEngineRPM(*device, RPMChannel)
-	RPMStart := 120
-	RPMMax := 260
-	rpm := float32(0)
+	CarStatsChannel := make(chan Car, 2048)
+	go getCarStats(CarStatsChannel, device)
+	carStats := Car{}
 
-	// Speed definitions
-	SpeedChannel := make(chan int, 2048)
-	go getCarSpeed(*device, SpeedChannel, file)
-	speed := 0
-
-	// Throttle definitions
-	ThrottleChannel := make(chan float32, 2048)
-	go getThrottlePos(*device, ThrottleChannel)
-	ThrottleStart := 110
-	ThrottleMax := float32(70.0)
-	throttlePos := float32(0)
-
-	// Blitzer definitions
 	BlitzerChannel := make(chan Blitzer.Blitzer, 2048)
 	go getBlitzer(BlitzerChannel)
-	blitzer := Blitzer.Blitzer{Vmax: 0}
+	closestBlitzer := Blitzer.Blitzer{}
 
-	// Runtime definitions
-	RuntimeChannel := make(chan float32, 2048)
-	// go getRuntimeSinceEngineStart(*device, RuntimeChannel)
+	limitOutline := rl.LoadImage("Assets/SpeedSign.png")
+	rl.ImageResize(limitOutline, 100, 100)
+	speedTexture := rl.LoadTextureFromImage(limitOutline)
 
-	// Eco definitions
-	EcoChannel := make(chan Eco, 2048)
-	go getEcoScore(EcoChannel, RPMChannel, ThrottleChannel, RuntimeChannel)
+	infinity := rl.LoadImage("Assets/infinity.png")
+	rl.ImageResize(infinity, 100, 100)
+	infinityTexture := rl.LoadTextureFromImage(infinity)
 
-	// Define Circle Positions
-	circleCenter := rl.NewVector2(float32(rl.GetScreenWidth()/2), float32(rl.GetScreenHeight()/2))
-	circleInnerRadius := 350.0
-	circleOuterRadius := 400.0
+	font := rl.LoadFontEx("Assets/AzeretMono-SemiBold.ttf", 125, nil, 0)
 
-	// Load all speed signs
-	// Consider: Only load sign and write numbers urself
-	// Also load texture outside of for loop!
-	limitNeg1 := rl.LoadImage("Assets/-1.png")
-	rl.ImageResize(limitNeg1, 200, 200)
-	limit30 := rl.LoadImage("Assets/30.png")
-	rl.ImageResize(limit30, 200, 200)
-	limit50 := rl.LoadImage("Assets/50.png")
-	rl.ImageResize(limit50, 200, 200)
-	limit60 := rl.LoadImage("Assets/60.png")
-	rl.ImageResize(limit60, 200, 200)
-	limit70 := rl.LoadImage("Assets/70.png")
-	rl.ImageResize(limit70, 200, 200)
-	limit80 := rl.LoadImage("Assets/80.png")
-	rl.ImageResize(limit80, 200, 200)
-	limit100 := rl.LoadImage("Assets/100.png")
-	rl.ImageResize(limit100, 200, 200)
+	framesCounter := 0
+	oldRPM := int32(0)
+	rpm := float32(0)
 
 	for !rl.WindowShouldClose() {
-		// things to add:
-		// engine load
-		// coolant temp
-		// runtime_since_engine_start
-		// correct error handling von Durak klauen
-		// check if device.RunOBDCommand(elmobd.NewEngineOilTemperature()) is a thing (wäre cool)
-
-		// Get new value form channels
-		select {
-		case rpm = <-RPMChannel:
-		default:
-		}
-		select {
-		case speed = <-SpeedChannel:
-		default:
-		}
-		select {
-		case throttlePos = <-ThrottleChannel:
-		default:
-		}
-		select {
-		case blitzer = <-BlitzerChannel:
-		default:
-		}
-
-		RPMEnd := getRPMDegrees(rpm)
-		RPMColor := getRPMColor(rpm)
-		ThrottleMax = getThrottleDegrees(throttlePos)
-
 		rl.BeginDrawing()
 		rl.DrawFPS(10, 10)
 		rl.ClearBackground(rl.Black)
 
-		switch blitzer.Vmax {
-		case -1:
-			texture := rl.LoadTextureFromImage(limitNeg1)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 0:
-			// do nothing
-		case 30:
-			texture := rl.LoadTextureFromImage(limit30)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 50:
-			texture := rl.LoadTextureFromImage(limit50)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 60:
-			texture := rl.LoadTextureFromImage(limit60)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 70:
-			texture := rl.LoadTextureFromImage(limit70)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 80:
-			texture := rl.LoadTextureFromImage(limit80)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 90:
-			// braucht noch Bild
-			texture := rl.LoadTextureFromImage(limit80)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 100:
-			texture := rl.LoadTextureFromImage(limit100)
-			rl.DrawTexture(texture, int32(rl.GetScreenWidth())/2-texture.Width/2, int32(rl.GetScreenHeight())/2-texture.Height/2-200, rl.White)
-		case 120:
-			// Bild braucht man noch!
-			return
+		select {
+		case closestBlitzer = <-BlitzerChannel:
 		default:
-			log.Fatal(blitzer.Vmax, " hat noch kein Image!")
 		}
+		select {
+		case carStats = <-CarStatsChannel:
+		default:
+		}
+		rpm = easings.LinearIn(float32(framesCounter), float32(oldRPM), float32(carStats.rpm)-float32(oldRPM), 30)
 
-		// Draw Speed
-		drawKMH(speed)
-
-		// Draw gray circle background
-		rl.DrawRing(circleCenter, float32(circleInnerRadius), float32(circleOuterRadius), 0, 360, int32(0.0), rl.Gray)
-
-		// Draw current RPM
-		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(RPMStart), RPMEnd, int32(0.0), RPMColor)
-
-		// Draw current Throttle
-		rl.DrawRing(circleCenter, float32(circleInnerRadius)+1, float32(circleOuterRadius)-1, float32(ThrottleStart), float32(ThrottleMax), int32(0.0), rl.Red)
-
-		// Draw Black bars above
-		rl.DrawRing(circleCenter, float32(circleInnerRadius)+4.5, float32(circleInnerRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
-		rl.DrawRing(circleCenter, float32(circleOuterRadius)-4.5, float32(circleOuterRadius), float32(RPMStart), float32(RPMMax), int32(0.0), rl.Blue)
-
-		needleStart := getNeedlePos(float32(circleInnerRadius)-15, RPMEnd)
-		needleEnd := getNeedlePos(float32(circleOuterRadius)+15, RPMEnd)
-
-		// eco := <-EcoChannel
-		// rl.DrawText(strconv.Itoa(int(eco.rpm)), int32(rl.GetScreenWidth()/2)-40, int32(rl.GetScreenHeight()/2)+300, 100, rl.White)
-
-		// Draw Needle
-		rl.DrawLineEx(rl.Vector2{X: needleStart.X + float32(rl.GetScreenWidth()/2), Y: needleStart.Y + float32(rl.GetScreenHeight()/2)}, rl.Vector2{needleEnd.X + float32(rl.GetScreenWidth()/2), needleEnd.Y + float32(rl.GetScreenHeight()/2)}, 5, rl.Red)
+		drawSpeed(carStats.speed, font)
+		drawrpm(rpm, font)
+		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, speedTexture, infinityTexture, carStats.speed, font)
 
 		rl.EndDrawing()
+
+		framesCounter += 1
+		if framesCounter >= 30 {
+			framesCounter = 0
+			oldRPM = carStats.rpm
+		}
 	}
 }
