@@ -103,7 +103,7 @@ func main() {
 	throttle := 1.0
 	ecoStart := 61
 	
-	blitzer := blitzer.Blitzer{Vmax: 80, City: "Lehm", Street: "xdStraße", Distance: 69.0}
+	blitzer := blitzer.Blitzer{Vmax: 80, City: "Lehm", Street: "xdStraße", Distance: 69.420}
 	
 	for !rl.WindowShouldClose() {
 
