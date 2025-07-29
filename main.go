@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gen2brain/raylib-go/easings"
 	rl "github.com/gen2brain/raylib-go/raylib"
 	"github.com/rzetterberg/elmobd"
 )
@@ -187,7 +186,7 @@ func drawBlitzer(distance float64, vmax int32, speedTexture rl.Texture2D, infini
 			Height: 70,
 		}, 0.5, 0, rl.Fade(rl.Green, 1))
 
-		rl.DrawRectangle(int32(rl.GetScreenWidth()/2)+150, int32(rl.GetScreenHeight()/2)- 20, 80, 120, rl.Fade(rl.Green, 1))
+		rl.DrawRectangle(int32(rl.GetScreenWidth()/2)+150, int32(rl.GetScreenHeight()/2)-20, 80, 120, rl.Fade(rl.Green, 1))
 	}
 }
 
@@ -323,9 +322,8 @@ func main() {
 
 	font := rl.LoadFontEx("Assets/AzeretMono-SemiBold.ttf", 125, nil, 0)
 
-	framesCounter := 0
-	oldRPM := int32(0)
-	rpm := float32(0)
+	displayedRPM := float32(0)
+	smoothing := float32(0.15) // Adjust for smoothness: lower is smoother, higher is snappier
 
 	for !rl.WindowShouldClose() {
 		rl.BeginDrawing()
@@ -340,18 +338,14 @@ func main() {
 		case carStats = <-CarStatsChannel:
 		default:
 		}
-		rpm = easings.LinearIn(float32(framesCounter), float32(oldRPM), float32(carStats.rpm)-float32(oldRPM), 30)
+
+		// Smoothly interpolate displayedRPM toward carStats.rpm
+		displayedRPM += (float32(carStats.rpm) - displayedRPM) * smoothing
 
 		drawSpeed(carStats.speed, font)
-		drawrpm(rpm, font)
+		drawrpm(displayedRPM, font)
 		drawBlitzer(closestBlitzer.Distance, closestBlitzer.Vmax, speedTexture, infinityTexture, carStats.speed, font)
 
 		rl.EndDrawing()
-
-		framesCounter += 1
-		if framesCounter >= 30 {
-			framesCounter = 0
-			oldRPM = carStats.rpm
-		}
 	}
 }
